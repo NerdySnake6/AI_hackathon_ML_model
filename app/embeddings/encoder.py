@@ -3,30 +3,26 @@
 from __future__ import annotations
 
 import hashlib
-import math
 from collections.abc import Iterable, Sequence
+
+import numpy as np
 
 from app.preprocessing.normalizer import normalize_text
 
 
-def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
-    """Return cosine similarity for two already aligned vectors."""
-    if len(left) != len(right):
-        raise ValueError("Vectors must have the same dimension")
-
-    dot_product = sum(lhs * rhs for lhs, rhs in zip(left, right, strict=True))
-    if dot_product == 0.0:
+def cosine_similarity(left: np.ndarray | Sequence[float], right: np.ndarray | Sequence[float]) -> float:
+    """Return cosine similarity for two NumPy vectors."""
+    u = np.asarray(left, dtype=np.float32)
+    v = np.asarray(right, dtype=np.float32)
+    norm_u = np.linalg.norm(u)
+    norm_v = np.linalg.norm(v)
+    if norm_u == 0.0 or norm_v == 0.0:
         return 0.0
-
-    left_norm = math.sqrt(sum(value * value for value in left))
-    right_norm = math.sqrt(sum(value * value for value in right))
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    return dot_product / (left_norm * right_norm)
+    return float(np.dot(u, v) / (norm_u * norm_v))
 
 
 class HashingTextEncoder:
-    """Build deterministic dense vectors from tokens and character n-grams."""
+    """Build deterministic dense vectors from tokens and character n-grams using NumPy."""
 
     def __init__(
         self,
@@ -43,13 +39,13 @@ class HashingTextEncoder:
         self.token_weight = token_weight
         self.ngram_weight = ngram_weight
 
-    def encode(self, text: str) -> tuple[float, ...]:
-        """Encode text into a normalized dense vector."""
+    def encode(self, text: str) -> np.ndarray:
+        """Encode text into a normalized dense vector optimized with NumPy."""
+        vector = np.zeros(self.dimension, dtype=np.float32)
         normalized = normalize_text(text)
         if not normalized:
-            return tuple(0.0 for _ in range(self.dimension))
+            return vector
 
-        vector = [0.0] * self.dimension
         tokens = normalized.split()
         for token in tokens:
             self._add_feature(vector, f"tok:{token}", self.token_weight)
@@ -60,7 +56,10 @@ class HashingTextEncoder:
         for ngram in self._iter_char_ngrams(compact_text):
             self._add_feature(vector, f"cmp:{ngram}", self.ngram_weight * 0.8)
 
-        return tuple(self._normalize(vector))
+        norm = np.linalg.norm(vector)
+        if norm > 0.0:
+            vector /= norm
+        return vector
 
     def _iter_char_ngrams(self, text: str) -> Iterable[str]:
         """Yield character n-grams for normalized title matching."""
@@ -73,17 +72,9 @@ class HashingTextEncoder:
                 if ngram.strip():
                     yield ngram
 
-    def _add_feature(self, vector: list[float], feature: str, weight: float) -> None:
+    def _add_feature(self, vector: np.ndarray, feature: str, weight: float) -> None:
         """Project one symbolic feature into a dense hashing vector."""
         digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
         index = int.from_bytes(digest[:4], "little") % self.dimension
         sign = 1.0 if digest[4] % 2 == 0 else -1.0
         vector[index] += sign * weight
-
-    @staticmethod
-    def _normalize(vector: Sequence[float]) -> list[float]:
-        """Normalize a vector to unit length."""
-        norm = math.sqrt(sum(value * value for value in vector))
-        if norm == 0.0:
-            return list(vector)
-        return [value / norm for value in vector]

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -14,7 +15,7 @@ class Base(DeclarativeBase):
 
 def utc_now() -> datetime:
     """Return the current UTC time as a timezone-aware datetime."""
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 class SearchQuery(Base):
@@ -25,7 +26,7 @@ class SearchQuery(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
-    source: Mapped[str | None] = mapped_column(String(100))
+    source: Mapped[Optional[str]] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     predictions: Mapped[list[Prediction]] = relationship(back_populates="query")
@@ -39,10 +40,10 @@ class CatalogTitleModel(Base):
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
     canonical_title: Mapped[str] = mapped_column(Text, nullable=False)
     content_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    year: Mapped[int | None] = mapped_column(Integer)
+    year: Mapped[Optional[int]] = mapped_column(Integer)
     popularity: Mapped[float] = mapped_column(Float, default=0.0)
-    external_source: Mapped[str | None] = mapped_column(String(100))
-    external_id: Mapped[str | None] = mapped_column(String(100))
+    external_source: Mapped[Optional[str]] = mapped_column(String(100))
+    external_id: Mapped[Optional[str]] = mapped_column(String(100))
 
     aliases: Mapped[list[TitleAliasModel]] = relationship(back_populates="title")
 
@@ -69,8 +70,8 @@ class Prediction(Base):
     query_id: Mapped[int] = mapped_column(ForeignKey("search_queries.id"))
     is_prof_video: Mapped[bool] = mapped_column(Boolean, nullable=False)
     domain_label: Mapped[str] = mapped_column(String(50), nullable=False)
-    content_type: Mapped[str | None] = mapped_column(String(50))
-    title_id: Mapped[str | None] = mapped_column(ForeignKey("catalog_titles.id"))
+    content_type: Mapped[Optional[str]] = mapped_column(String(50))
+    title_id: Mapped[Optional[str]] = mapped_column(ForeignKey("catalog_titles.id"))
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     decision: Mapped[str] = mapped_column(String(50), nullable=False)
     model_version: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -106,4 +107,4 @@ class ReviewQueueItem(Base):
     prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.id"))
     status: Mapped[str] = mapped_column(String(50), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)

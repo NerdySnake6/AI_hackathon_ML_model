@@ -11,10 +11,15 @@ from app.schemas import (
     NormalizedQuery,
     TitleCandidate,
 )
+from app.classification.ml_domain import MachineLearningDomainClassifier
 
 
 class RuleBasedDomainClassifier:
     """Rule-based gate that separates video queries from non-video queries."""
+
+    def __init__(self, ml_classifier: MachineLearningDomainClassifier | None = None) -> None:
+        """Initialize with an optional ML classifier to boost heuristic rules."""
+        self.ml_classifier = ml_classifier
 
     def predict(
         self,
@@ -53,6 +58,16 @@ class RuleBasedDomainClassifier:
             penalty = 0.2 if top_score >= 0.75 else 0.45
             score -= penalty
             reasons.append("hard_negative_word")
+            
+        if self.ml_classifier:
+            ml_prob = self.ml_classifier.predict_probability(query.raw_text)
+            if ml_prob is not None:
+                if ml_prob >= 0.8:
+                    score += 0.35
+                    reasons.append("high_ml_confidence")
+                elif ml_prob <= 0.2:
+                    score -= 0.35
+                    reasons.append("low_ml_confidence")
 
         score = max(0.0, min(score, 1.0))
         if score >= settings.DOMAIN_VIDEO_THRESHOLD:

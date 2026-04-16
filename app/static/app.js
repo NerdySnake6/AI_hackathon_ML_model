@@ -1,383 +1,122 @@
-const samples = [
-  "1 сезон тьмы",
-  "интерстелар смотреть онлайн",
-  "10 троллейбус ижевск",
-  "смотреть фильмы 2025 года онлайн",
-  "кухня ремонт",
-  "машаи медведь новые серии",
-  "slovo pacana",
-  "bynthcntkkfh",
-];
+document.addEventListener("DOMContentLoaded", () => {
+    const queryInput = document.getElementById("queryInput");
+    const loader = document.getElementById("loader");
+    const emptyState = document.getElementById("emptyState");
+    const resultCard = document.getElementById("resultCard");
+    const searchContainer = document.querySelector(".search-container");
 
-const reviewQueue = [];
-let lastResult = null;
-let lastBatch = [];
+    const statusIcon = document.getElementById("statusIcon");
+    const domainTitle = document.getElementById("domainTitle");
+    const confidenceValue = document.getElementById("confidenceValue");
+    const confidenceBar = document.getElementById("confidenceBar");
+    const contentType = document.getElementById("contentType");
+    const extractedTitle = document.getElementById("extractedTitle");
+    const pipelineDecision = document.getElementById("pipelineDecision");
+    const reasonsContainer = document.getElementById("reasonsContainer");
 
-const els = {
-  serviceStatus: document.getElementById("serviceStatus"),
-  sampleQueries: document.getElementById("sampleQueries"),
-  singleQuery: document.getElementById("singleQuery"),
-  batchQueries: document.getElementById("batchQueries"),
-  labelSingle: document.getElementById("labelSingle"),
-  labelBatch: document.getElementById("labelBatch"),
-  sendToReview: document.getElementById("sendToReview"),
-  downloadBatch: document.getElementById("downloadBatch"),
-  downloadReview: document.getElementById("downloadReview"),
-  clearReview: document.getElementById("clearReview"),
-  resultPane: document.getElementById("resultPane"),
-  decisionBadge: document.getElementById("decisionBadge"),
-  messageBox: document.getElementById("messageBox"),
-  reviewCount: document.getElementById("reviewCount"),
-};
+    const icons = {
+        video: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="16" height="14" rx="2"/><line x1="22" y1="9" x2="18" y2="11"/><line x1="18" y1="13" x2="22" y2="15"/></svg>`,
+        trash: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`,
+        uncertain: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>`
+    };
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+    let debounceTimer;
 
-function formatValue(value) {
-  if (value === null || value === undefined || value === "") {
-    return "—";
-  }
-  return escapeHtml(value);
-}
+    queryInput.addEventListener("input", (e) => {
+        const query = e.target.value.trim();
+        
+        clearTimeout(debounceTimer);
+        
+        if (query.length === 0) {
+            hideResults();
+            return;
+        }
 
-function percent(value) {
-  return `${Math.round((Number(value) || 0) * 100)}%`;
-}
+        debounceTimer = setTimeout(() => {
+            fetchLabel(query);
+        }, 400); // 400ms debounce
+    });
 
-function videoLabel(result) {
-  if (result.domain_label === "uncertain") {
-    return "неясно";
-  }
-  return result.is_prof_video ? "да" : "нет";
-}
-
-function setMessage(text) {
-  els.messageBox.textContent = text;
-  els.messageBox.classList.toggle("visible", Boolean(text));
-}
-
-function setDecision(decision) {
-  const value = decision || "ready";
-  els.decisionBadge.textContent = value;
-  els.decisionBadge.className = `badge ${value}`;
-}
-
-function showView(name) {
-  document.querySelectorAll("[data-view]").forEach((view) => {
-    view.classList.toggle("active", view.dataset.view === name);
-  });
-  document.querySelectorAll("[data-view-button]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.viewButton === name);
-  });
-  if (name === "review") {
-    renderReview();
-  }
-}
-
-async function healthCheck() {
-  try {
-    const response = await fetch("/health");
-    if (!response.ok) {
-      throw new Error("bad status");
+    async function fetchLabel(query) {
+        showLoader();
+        try {
+            const res = await fetch("/label", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query_text: query })
+            });
+            if (!res.ok) throw new Error("API Error");
+            const data = await res.json();
+            renderResults(data);
+        } catch (err) {
+            console.error(err);
+            hideLoader();
+        }
     }
-    els.serviceStatus.textContent = "API работает";
-  } catch (error) {
-    els.serviceStatus.textContent = "API недоступен";
-  }
-}
 
-async function labelSingle() {
-  const query = els.singleQuery.value.trim();
-  if (!query) {
-    setMessage("Пустой запрос не обрабатывается");
-    return;
-  }
+    function showLoader() {
+        loader.classList.remove("hidden");
+    }
 
-  setMessage("");
-  const response = await fetch("/label", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({query_text: query}),
-  });
-  if (!response.ok) {
-    setMessage("Ошибка разметки запроса");
-    return;
-  }
+    function hideLoader() {
+        loader.classList.add("hidden");
+    }
 
-  lastResult = await response.json();
-  renderResult(lastResult);
-  if (["review", "manual_required"].includes(lastResult.decision)) {
-    addToReview(lastResult);
-  }
-}
+    function hideResults() {
+        hideLoader();
+        resultCard.classList.add("hidden");
+        emptyState.classList.remove("hidden");
+        searchContainer.classList.remove("active-search");
+    }
 
-async function labelBatch() {
-  const queries = els.batchQueries.value
-    .split("\n")
-    .map((query) => query.trim())
-    .filter(Boolean)
-    .map((query_text, index) => ({query_id: `ui_${index + 1}`, query_text}));
+    function renderResults(data) {
+        hideLoader();
+        emptyState.classList.add("hidden");
+        searchContainer.classList.add("active-search");
+        resultCard.classList.remove("hidden");
 
-  if (!queries.length) {
-    setMessage("Нет запросов для обработки");
-    return;
-  }
+        const percent = Math.round(data.confidence * 100);
+        confidenceValue.textContent = `${percent}%`;
+        
+        // Wait minor delay to trigger CSS animation smoothly for bar
+        setTimeout(() => {
+            confidenceBar.style.width = `${percent}%`;
+        }, 50);
 
-  setMessage("");
-  const response = await fetch("/label_batch", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({queries}),
-  });
-  if (!response.ok) {
-    setMessage("Ошибка batch-разметки");
-    return;
-  }
+        // Map domains
+        const isVideo = data.domain_label === "prof_video";
+        const isTrash = data.domain_label === "non_video";
 
-  lastBatch = await response.json();
-  lastBatch
-    .filter((item) => ["review", "manual_required"].includes(item.decision))
-    .forEach(addToReview);
-  renderBatch(lastBatch);
-}
+        if (isVideo || data.is_prof_video) {
+            statusIcon.innerHTML = icons.video;
+            statusIcon.className = "icon-box success";
+            domainTitle.textContent = "Video Content";
+            domainTitle.style.color = "var(--success-neon)";
+        } else if (isTrash) {
+            statusIcon.innerHTML = icons.trash;
+            statusIcon.className = "icon-box trash";
+            domainTitle.textContent = "Unrelated (Trash)";
+            domainTitle.style.color = "var(--text-secondary)";
+        } else {
+            statusIcon.innerHTML = icons.uncertain;
+            statusIcon.className = "icon-box";
+            domainTitle.textContent = "Uncertain";
+            domainTitle.style.color = "var(--accent-purple)";
+        }
 
-function renderResult(result) {
-  setDecision(result.decision);
-  const candidates = result.candidates || [];
-  const candidateRows = candidates.length
-    ? candidates.map((candidate, index) => `
-      <tr>
-        <td>${index + 1}</td>
-        <td>${escapeHtml(candidate.canonical_title)}</td>
-        <td>${escapeHtml(candidate.content_type)}</td>
-        <td>${formatValue(candidate.title_id)}</td>
-        <td>${percent(candidate.rank_score)}</td>
-        <td>${escapeHtml(candidate.matched_alias)}</td>
-      </tr>
-    `).join("")
-    : `<tr><td colspan="6">Кандидатов нет</td></tr>`;
+        contentType.textContent = data.content_type || "N/A";
+        extractedTitle.textContent = data.title || "No exact match";
+        
+        const decisionText = data.decision.replace("_", " ").toUpperCase();
+        pipelineDecision.textContent = decisionText;
 
-  const reasons = (result.reasons || []).length
-    ? result.reasons.map((reason) => `<span class="chip">${escapeHtml(reason)}</span>`).join("")
-    : `<span class="chip">no_reasons</span>`;
-
-  els.resultPane.innerHTML = `
-    <div class="summary">
-      <div class="metric">
-        <div class="metric-label">Видеоконтент</div>
-        <div class="metric-value">${videoLabel(result)}</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Тип</div>
-        <div class="metric-value">${formatValue(result.content_type)}</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Тайтл</div>
-        <div class="metric-value">${formatValue(result.title)}</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Confidence</div>
-        <div class="metric-value">${percent(result.confidence)}</div>
-        <div class="confidence-track">
-          <div class="confidence-fill" style="width: ${percent(result.confidence)}"></div>
-        </div>
-      </div>
-    </div>
-    <table>
-      <tbody>
-        <tr><th>Query</th><td>${escapeHtml(result.query)}</td></tr>
-        <tr><th>Normalized</th><td>${escapeHtml(result.normalized_query)}</td></tr>
-        <tr><th>Domain</th><td>${escapeHtml(result.domain_label)}</td></tr>
-        <tr><th>Title ID</th><td>${formatValue(result.title_id)}</td></tr>
-        <tr><th>Model</th><td>${escapeHtml(result.model_version)}</td></tr>
-      </tbody>
-    </table>
-    <h2 class="section-title">Кандидаты</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Название</th>
-            <th>Тип</th>
-            <th>Title ID</th>
-            <th>Score</th>
-            <th>Alias</th>
-          </tr>
-        </thead>
-        <tbody>${candidateRows}</tbody>
-      </table>
-    </div>
-    <h2 class="section-title">Reasons</h2>
-    <div class="chips">${reasons}</div>
-  `;
-}
-
-function renderBatch(results) {
-  setDecision("batch");
-  const rows = results.map((item) => `
-    <tr>
-      <td>${escapeHtml(item.query)}</td>
-      <td><span class="badge ${item.decision}">${escapeHtml(item.decision)}</span></td>
-      <td>${item.is_prof_video ? "да" : "нет"}</td>
-      <td>${formatValue(item.content_type)}</td>
-      <td>${formatValue(item.title)}</td>
-      <td>${formatValue(item.title_id)}</td>
-      <td>${percent(item.confidence)}</td>
-    </tr>
-  `).join("");
-  const autoCount = results.filter((item) => item.decision === "auto_accept").length;
-  const reviewCount = results.filter((item) => ["review", "manual_required"].includes(item.decision)).length;
-  const nonVideoCount = results.filter((item) => item.decision === "non_video").length;
-
-  els.resultPane.innerHTML = `
-    <div class="summary">
-      <div class="metric"><div class="metric-label">Всего</div><div class="metric-value">${results.length}</div></div>
-      <div class="metric"><div class="metric-label">Auto</div><div class="metric-value">${autoCount}</div></div>
-      <div class="metric"><div class="metric-label">Review</div><div class="metric-value">${reviewCount}</div></div>
-      <div class="metric"><div class="metric-label">Non-video</div><div class="metric-value">${nonVideoCount}</div></div>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Query</th>
-            <th>Decision</th>
-            <th>Video</th>
-            <th>Type</th>
-            <th>Title</th>
-            <th>Title ID</th>
-            <th>Confidence</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-function addToReview(result) {
-  const exists = reviewQueue.some((item) => item.query === result.query);
-  if (!exists) {
-    reviewQueue.push(result);
-  }
-  updateReviewCount();
-}
-
-function updateReviewCount() {
-  els.reviewCount.textContent = reviewQueue.length
-    ? `В очереди: ${reviewQueue.length}`
-    : "Очередь пуста";
-}
-
-function renderReview() {
-  setDecision("review_queue");
-  updateReviewCount();
-  if (!reviewQueue.length) {
-    els.resultPane.innerHTML = `<div class="empty">Очередь проверки пуста</div>`;
-    return;
-  }
-
-  const rows = reviewQueue.map((item, index) => `
-    <tr>
-      <td>${index + 1}</td>
-      <td>${escapeHtml(item.query)}</td>
-      <td>${escapeHtml(item.decision)}</td>
-      <td>${formatValue(item.title)}</td>
-      <td>${formatValue(item.title_id)}</td>
-      <td>${percent(item.confidence)}</td>
-    </tr>
-  `).join("");
-
-  els.resultPane.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Query</th>
-            <th>Decision</th>
-            <th>Title</th>
-            <th>Title ID</th>
-            <th>Confidence</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-function toCsv(rows) {
-  const header = ["query", "decision", "is_prof_video", "content_type", "title", "title_id", "confidence"];
-  const lines = [header.join(",")];
-  rows.forEach((item) => {
-    const values = [
-      item.query,
-      item.decision,
-      item.is_prof_video,
-      item.content_type || "",
-      item.title || "",
-      item.title_id || "",
-      item.confidence,
-    ].map((value) => `"${String(value).replaceAll('"', '""')}"`);
-    lines.push(values.join(","));
-  });
-  return lines.join("\n");
-}
-
-function downloadCsv(filename, rows) {
-  if (!rows.length) {
-    setMessage("Нет данных для скачивания");
-    return;
-  }
-  const blob = new Blob([toCsv(rows)], {type: "text/csv;charset=utf-8"});
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-document.querySelectorAll("[data-view-button]").forEach((button) => {
-  button.addEventListener("click", () => showView(button.dataset.viewButton));
+        // Render reasons as small tags
+        reasonsContainer.innerHTML = "";
+        data.reasons.forEach(r => {
+            const span = document.createElement("span");
+            span.className = "reason-tag";
+            span.textContent = r;
+            reasonsContainer.appendChild(span);
+        });
+    }
 });
-
-samples.forEach((sample) => {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = sample;
-  button.title = sample;
-  button.addEventListener("click", () => {
-    els.singleQuery.value = sample;
-    labelSingle();
-  });
-  els.sampleQueries.appendChild(button);
-});
-
-els.labelSingle.addEventListener("click", labelSingle);
-els.labelBatch.addEventListener("click", labelBatch);
-els.sendToReview.addEventListener("click", () => {
-  if (!lastResult) {
-    setMessage("Сначала разметьте запрос");
-    return;
-  }
-  addToReview(lastResult);
-  setMessage("Запрос добавлен в review");
-});
-els.downloadBatch.addEventListener("click", () => downloadCsv("batch_predictions.csv", lastBatch));
-els.downloadReview.addEventListener("click", () => downloadCsv("review_queue.csv", reviewQueue));
-els.clearReview.addEventListener("click", () => {
-  reviewQueue.splice(0, reviewQueue.length);
-  renderReview();
-});
-
-healthCheck();
-labelSingle();

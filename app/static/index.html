@@ -1,73 +1,91 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Query Labeler Demo</title>
-  <link rel="stylesheet" href="/static/styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mediascope | ML Query NLP</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <main class="shell">
-    <header class="topbar">
-      <div>
-        <div class="eyebrow">ML Query Labeler</div>
-        <h1>Разметка поисковых запросов</h1>
-      </div>
-      <span class="status" id="serviceStatus">Проверка API</span>
-    </header>
+    <div class="background-mesh"></div>
 
-    <section class="workspace">
-      <aside class="input-panel">
-        <nav class="tabs" aria-label="Режимы">
-          <button type="button" class="active" data-view-button="single">Один запрос</button>
-          <button type="button" data-view-button="batch">Пачка</button>
-          <button type="button" data-view-button="review">Review</button>
-        </nav>
-
-        <section class="view active" data-view="single">
-          <label for="singleQuery">Запрос</label>
-          <textarea id="singleQuery">интерстелар смотреть онлайн</textarea>
-          <div class="actions">
-            <button class="primary" type="button" id="labelSingle">Разметить</button>
-            <button type="button" id="sendToReview">В review</button>
-          </div>
-          <div class="samples" id="sampleQueries"></div>
-        </section>
-
-        <section class="view" data-view="batch">
-          <label for="batchQueries">Запросы, по одному на строку</label>
-          <textarea id="batchQueries">1 сезон тьмы
-кухня ремонт
-смотреть фильмы 2025 года онлайн
-bynthcntkkfh</textarea>
-          <div class="actions">
-            <button class="primary" type="button" id="labelBatch">Разметить пачку</button>
-            <button type="button" id="downloadBatch">Скачать CSV</button>
-          </div>
-        </section>
-
-        <section class="view" data-view="review">
-          <div class="actions">
-            <button type="button" id="clearReview">Очистить</button>
-            <button type="button" id="downloadReview">Скачать CSV</button>
-          </div>
-          <p class="notice visible" id="reviewCount">Очередь пуста</p>
-        </section>
-
-        <p class="notice" id="messageBox"></p>
-      </aside>
-
-      <section class="result-panel">
-        <div class="result-header">
-          <h2>Результат</h2>
-          <span class="badge" id="decisionBadge">ready</span>
+    <main class="search-container">
+        <!-- Logo / Title -->
+        <div class="brand">
+            <h1 class="logo-text">Mediascope <span>AI</span></h1>
+            <p class="subtitle">Интеллектуальная разметка видеоконтента</p>
         </div>
-        <div id="resultPane" class="result-body">
-          <div class="empty">Введите запрос или обработайте пачку</div>
+
+        <!-- Search Input -->
+        <div class="search-wrapper">
+            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input 
+                type="text" 
+                id="queryInput" 
+                class="search-input" 
+                placeholder="Введите типичный поисковый запрос (например: 1 сезон тьмы)"
+                autocomplete="off"
+            >
+            <div id="loader" class="loader hidden"></div>
         </div>
-      </section>
-    </section>
-  </main>
-  <script src="/static/app.js"></script>
+
+        <!-- Empty State Hint -->
+        <div id="emptyState" class="empty-state">
+            <p>Начните печатать, и алгоритм мгновенно проанализирует домен запроса.</p>
+        </div>
+
+        <!-- Results Card (Glassmorphism) -->
+        <div id="resultCard" class="result-card hidden">
+            <!-- Header Section -->
+            <div class="card-header">
+                <div class="status-indicator">
+                    <div id="statusIcon" class="icon-box"></div>
+                    <div class="status-text">
+                        <span class="label">DETECTED DOMAIN</span>
+                        <h2 id="domainTitle">Video Content</h2>
+                    </div>
+                </div>
+                
+                <div class="confidence-box">
+                    <span class="label">CONFIDENCE</span>
+                    <div class="confidence-value" id="confidenceValue">95%</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="confidenceBar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Detailed Metrics -->
+            <div class="card-body">
+                <div class="metric-group">
+                    <span class="label">CONTENT TYPE</span>
+                    <p id="contentType" class="value-text">-</p>
+                </div>
+                <div class="metric-group">
+                    <span class="label">EXTRACTED ENTITY</span>
+                    <p id="extractedTitle" class="value-text">-</p>
+                </div>
+                <div class="metric-group">
+                    <span class="label">ALGORITHM DECISION</span>
+                    <p id="pipelineDecision" class="value-text">-</p>
+                </div>
+            </div>
+
+            <!-- Underlying Reasons (Tags) -->
+            <div class="card-footer" id="reasonsContainer">
+                <!-- Tags will be injected here via JS -->
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
 </body>
 </html>

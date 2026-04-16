@@ -6,7 +6,6 @@ import csv
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from heapq import nlargest
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from app.preprocessing.normalizer import (
     normalize_text,
     transliterate_ru_to_latin,
 )
+from rapidfuzz import fuzz
 from app.schemas import CatalogTitle, NormalizedQuery, TitleCandidate
 from app.settings import (
     MAX_CANDIDATES,
@@ -286,16 +286,15 @@ def score_alias_match(
     if variant_compact and variant_compact == alias.compact_alias:
         return 0.98, ["compact_alias_match"]
 
-    score = SequenceMatcher(
-        None,
+    # fuzz.ratio returns a score between 0 and 100, so we divide by 100
+    score = fuzz.ratio(
         normalized_variant,
         alias.normalized_alias,
-    ).ratio()
-    compact_score = SequenceMatcher(
-        None,
+    ) / 100.0
+    compact_score = fuzz.ratio(
         variant_compact,
         alias.compact_alias,
-    ).ratio()
+    ) / 100.0
     score = max(score, compact_score)
 
     if len(alias.normalized_alias) >= 4 and alias.normalized_alias in normalized_variant:

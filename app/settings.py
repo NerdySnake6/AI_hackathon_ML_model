@@ -17,7 +17,7 @@ HYBRID_VECTOR_THRESHOLD = 0.42
 HYBRID_LEXICAL_WEIGHT = 0.7
 HYBRID_VECTOR_WEIGHT = 0.25
 
-DEFAULT_CATALOG_PATH = "data/sample_catalog.csv"
+DEFAULT_CATALOG_PATH = "data/imdb_catalog.csv"
 
 VIDEO_INTENT_WORDS = {
     "смотреть",

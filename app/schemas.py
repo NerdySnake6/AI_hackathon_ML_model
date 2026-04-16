@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.settings import MAX_BATCH_SIZE, MAX_QUERY_LENGTH
 
 
-class ContentType(StrEnum):
+class ContentType(str, Enum):
     """Supported professional video content types."""
 
     FILM = "film"
@@ -20,7 +20,7 @@ class ContentType(StrEnum):
     GENERIC = "generic"
 
 
-class DomainLabel(StrEnum):
+class DomainLabel(str, Enum):
     """Domain gate labels for incoming user queries."""
 
     PROF_VIDEO = "prof_video"
@@ -28,7 +28,7 @@ class DomainLabel(StrEnum):
     UNCERTAIN = "uncertain"
 
 
-class Decision(StrEnum):
+class Decision(str, Enum):
     """Final routing decisions produced by the confidence policy."""
 
     AUTO_ACCEPT = "auto_accept"

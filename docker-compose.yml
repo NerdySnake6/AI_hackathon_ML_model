@@ -1,0 +1,44 @@
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: mediascope
+      POSTGRES_PASSWORD: mediascope_hackathon_password
+      POSTGRES_DB: query_labeler
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediascope -d query_labeler"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    environment:
+      - QUERY_LABELER_DATABASE_URL=postgresql+psycopg://mediascope:mediascope_hackathon_password@db:5432/query_labeler
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./outputs:/app/outputs
+      - ./data:/app/data
+      - ./scripts:/app/scripts
+    # This sequentially prepares the database schema, imports default catalog, 
+    # trains the ML heuristic model, and finally boots the API.
+    command: >
+      bash -c "
+      alembic upgrade head &&
+      PYTHONPATH=. python scripts/import_catalog.py &&
+      PYTHONPATH=. python scripts/train_classifier.py --data data/imdb_labeled_queries.csv &&
+      uvicorn app.api:app --host 0.0.0.0 --port 8000
+      "
+
+volumes:
+  postgres_data:

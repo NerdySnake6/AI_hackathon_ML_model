@@ -9,6 +9,7 @@ from app.classification.domain import (
     RuleBasedDomainClassifier,
     RuleBasedGenericDetector,
 )
+from app.classification.ml_domain import MachineLearningDomainClassifier
 from app.db.repositories import CatalogDatabaseRepository
 from app.db.session import DATABASE_URL, build_engine
 from app.policy.decision import ConfidencePolicy
@@ -38,7 +39,8 @@ class QueryLabelingPipeline:
         self.max_candidates = max_candidates
         self.retriever = HybridCandidateRetriever.from_catalog(catalog)
         self.ranker = RuleBasedCandidateRanker()
-        self.domain_classifier = RuleBasedDomainClassifier()
+        self.ml_classifier = MachineLearningDomainClassifier()
+        self.domain_classifier = RuleBasedDomainClassifier(ml_classifier=self.ml_classifier)
         self.generic_detector = RuleBasedGenericDetector()
         self.policy = ConfidencePolicy()
 
