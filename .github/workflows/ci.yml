@@ -37,8 +37,8 @@ jobs:
       - name: Run offline evaluation
         run: |
           python scripts/evaluate.py \
-            --input data/sample_labeled_queries.csv \
-            --catalog data/sample_catalog.csv \
+            --input data/imdb_labeled_queries.csv \
+            --catalog data/imdb_catalog.csv \
             --output outputs/metrics_report.json \
             --errors outputs/errors.csv
 
@@ -46,14 +46,14 @@ jobs:
         run: |
           python scripts/run_batch.py \
             --input data/sample_queries.csv \
-            --catalog data/sample_catalog.csv \
+            --catalog data/imdb_catalog.csv \
             --output outputs/predictions.csv
 
       - name: Check Alembic SQL generation
         run: alembic upgrade head --sql > outputs/alembic.sql
 
       - name: Check catalog import
-        run: python scripts/import_catalog.py --catalog data/sample_catalog.csv --create-tables
+        run: python scripts/import_catalog.py --catalog data/imdb_catalog.csv --create-tables
 
       - name: Upload check outputs
         uses: actions/upload-artifact@v4

@@ -1,0 +1,167 @@
+EEFFEEEEEE
+======================================================================
+ERROR: test_catalog_search (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_catalog_search
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_catalog_search.py", line 7, in <module>
+    from app.catalog.repository import InMemoryCatalogRepository
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/catalog/repository.py", line 12, in <module>
+    from app.preprocessing.normalizer import (
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/preprocessing/normalizer.py", line 9, in <module>
+    from app.schemas import NormalizedQuery
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/schemas.py", line 8, in <module>
+    from pydantic import BaseModel, Field, field_validator
+ModuleNotFoundError: No module named 'pydantic'
+
+
+======================================================================
+ERROR: test_db_repositories (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_db_repositories
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_db_repositories.py", line 9, in <module>
+    from sqlalchemy import create_engine, func, select
+ModuleNotFoundError: No module named 'sqlalchemy'
+
+
+======================================================================
+ERROR: test_evaluation (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_evaluation
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_evaluation.py", line 7, in <module>
+    from app.evaluation.metrics import (
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/evaluation/metrics.py", line 8, in <module>
+    from app.schemas import Decision, LabelResult
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/schemas.py", line 8, in <module>
+    from pydantic import BaseModel, Field, field_validator
+ModuleNotFoundError: No module named 'pydantic'
+
+
+======================================================================
+ERROR: test_hybrid_retrieval (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_hybrid_retrieval
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_hybrid_retrieval.py", line 7, in <module>
+    from app.catalog.repository import InMemoryCatalogRepository
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/catalog/repository.py", line 12, in <module>
+    from app.preprocessing.normalizer import (
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/preprocessing/normalizer.py", line 9, in <module>
+    from app.schemas import NormalizedQuery
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/schemas.py", line 8, in <module>
+    from pydantic import BaseModel, Field, field_validator
+ModuleNotFoundError: No module named 'pydantic'
+
+
+======================================================================
+ERROR: test_imdb_ingestion (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_imdb_ingestion
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_imdb_ingestion.py", line 11, in <module>
+    from app.ingestion.imdb import ImdbImportConfig, load_imdb_catalog
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/ingestion/__init__.py", line 3, in <module>
+    from app.ingestion.imdb import (
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/ingestion/imdb.py", line 14, in <module>
+    from app.preprocessing.normalizer import normalize_text
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/preprocessing/normalizer.py", line 9, in <module>
+    from app.schemas import NormalizedQuery
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/schemas.py", line 8, in <module>
+    from pydantic import BaseModel, Field, field_validator
+ModuleNotFoundError: No module named 'pydantic'
+
+
+======================================================================
+ERROR: test_ml_domain (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_ml_domain
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_ml_domain.py", line 6, in <module>
+    from app.classification.ml_domain import MachineLearningDomainClassifier
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/classification/ml_domain.py", line 7, in <module>
+    import joblib
+ModuleNotFoundError: No module named 'joblib'
+
+
+======================================================================
+ERROR: test_normalizer (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_normalizer
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_normalizer.py", line 7, in <module>
+    from app.preprocessing.normalizer import (
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/preprocessing/normalizer.py", line 9, in <module>
+    from app.schemas import NormalizedQuery
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/schemas.py", line 8, in <module>
+    from pydantic import BaseModel, Field, field_validator
+ModuleNotFoundError: No module named 'pydantic'
+
+
+======================================================================
+ERROR: test_pipeline (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_pipeline
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_pipeline.py", line 7, in <module>
+    from app.pipeline import QueryLabelingPipeline
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/app/pipeline.py", line 5, in <module>
+    from sqlalchemy.orm import sessionmaker
+ModuleNotFoundError: No module named 'sqlalchemy'
+
+
+======================================================================
+FAIL: test_demo_page_contains_labeling_controls (test_demo_ui.DemoPageTestCase)
+Render the browser UI with single, batch, and review controls.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_demo_ui.py", line 16, in test_demo_page_contains_labeling_controls
+    self.assertIn("Query Labeler", html)
+AssertionError: 'Query Labeler' not found in '<!DOCTYPE html>\n<html lang="ru">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>Mediascope | ML Query NLP</title>\n    <link rel="preconnect" href="https://fonts.googleapis.com">\n    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">\n    <link rel="stylesheet" href="/static/styles.css">\n</head>\n<body>\n    <div class="background-mesh"></div>\n\n    <main class="search-container">\n        <!-- Logo / Title -->\n        <div class="brand">\n            <h1 class="logo-text">Mediascope <span>AI</span></h1>\n            <p class="subtitle">Интеллектуальная разметка видеоконтента</p>\n        </div>\n\n        <!-- Search Input -->\n        <div class="search-wrapper">\n            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                <circle cx="11" cy="11" r="8"></circle>\n                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>\n            </svg>\n            <input \n                type="text" \n                id="queryInput" \n                class="search-input" \n                placeholder="Введите типичный поисковый запрос (например: 1 сезон тьмы)"\n                autocomplete="off"\n            >\n            <div id="loader" class="loader hidden"></div>\n        </div>\n\n        <!-- Empty State Hint -->\n        <div id="emptyState" class="empty-state">\n            <p>Начните печатать, и алгоритм мгновенно проанализирует домен запроса.</p>\n        </div>\n\n        <!-- Results Card (Glassmorphism) -->\n        <div id="resultCard" class="result-card hidden">\n            <!-- Header Section -->\n            <div class="card-header">\n                <div class="status-indicator">\n                    <div id="statusIcon" class="icon-box"></div>\n                    <div class="status-text">\n                        <span class="label">DETECTED DOMAIN</span>\n                        <h2 id="domainTitle">Video Content</h2>\n                    </div>\n                </div>\n                \n                <div class="confidence-box">\n                    <span class="label">CONFIDENCE</span>\n                    <div class="confidence-value" id="confidenceValue">95%</div>\n                    <div class="progress-bar-container">\n                        <div class="progress-bar" id="confidenceBar"></div>\n                    </div>\n                </div>\n            </div>\n\n            <div class="divider"></div>\n\n            <!-- Detailed Metrics -->\n            <div class="card-body">\n                <div class="metric-group">\n                    <span class="label">CONTENT TYPE</span>\n                    <p id="contentType" class="value-text">-</p>\n                </div>\n                <div class="metric-group">\n                    <span class="label">EXTRACTED ENTITY</span>\n                    <p id="extractedTitle" class="value-text">-</p>\n                </div>\n                <div class="metric-group">\n                    <span class="label">ALGORITHM DECISION</span>\n                    <p id="pipelineDecision" class="value-text">-</p>\n                </div>\n            </div>\n\n            <!-- Underlying Reasons (Tags) -->\n            <div class="card-footer" id="reasonsContainer">\n                <!-- Tags will be injected here via JS -->\n            </div>\n        </div>\n    </main>\n\n    <script src="/static/app.js"></script>\n</body>\n</html>\n'
+
+======================================================================
+FAIL: test_demo_script_calls_labeling_api (test_demo_ui.DemoPageTestCase)
+Keep the static UI wired to the FastAPI labeling endpoints.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/nerdysnake6/Documents/ML-модель для поиска/tests/test_demo_ui.py", line 25, in test_demo_script_calls_labeling_api
+    self.assertIn("fetch(\"/label_batch\"", script)
+AssertionError: 'fetch("/label_batch"' not found in 'document.addEventListener("DOMContentLoaded", () => {\n    const queryInput = document.getElementById("queryInput");\n    const loader = document.getElementById("loader");\n    const emptyState = document.getElementById("emptyState");\n    const resultCard = document.getElementById("resultCard");\n    const searchContainer = document.querySelector(".search-container");\n\n    const statusIcon = document.getElementById("statusIcon");\n    const domainTitle = document.getElementById("domainTitle");\n    const confidenceValue = document.getElementById("confidenceValue");\n    const confidenceBar = document.getElementById("confidenceBar");\n    const contentType = document.getElementById("contentType");\n    const extractedTitle = document.getElementById("extractedTitle");\n    const pipelineDecision = document.getElementById("pipelineDecision");\n    const reasonsContainer = document.getElementById("reasonsContainer");\n\n    const icons = {\n        video: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="16" height="14" rx="2"/><line x1="22" y1="9" x2="18" y2="11"/><line x1="18" y1="13" x2="22" y2="15"/></svg>`,\n        trash: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`,\n        uncertain: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>`\n    };\n\n    let debounceTimer;\n\n    queryInput.addEventListener("input", (e) => {\n        const query = e.target.value.trim();\n        \n        clearTimeout(debounceTimer);\n        \n        if (query.length === 0) {\n            hideResults();\n            return;\n        }\n\n        debounceTimer = setTimeout(() => {\n            fetchLabel(query);\n        }, 400); // 400ms debounce\n    });\n\n    async function fetchLabel(query) {\n        showLoader();\n        try {\n            const res = await fetch("/label", {\n                method: "POST",\n                headers: { "Content-Type": "application/json" },\n                body: JSON.stringify({ query_text: query })\n            });\n            if (!res.ok) throw new Error("API Error");\n            const data = await res.json();\n            renderResults(data);\n        } catch (err) {\n            console.error(err);\n            hideLoader();\n        }\n    }\n\n    function showLoader() {\n        loader.classList.remove("hidden");\n    }\n\n    function hideLoader() {\n        loader.classList.add("hidden");\n    }\n\n    function hideResults() {\n        hideLoader();\n        resultCard.classList.add("hidden");\n        emptyState.classList.remove("hidden");\n        searchContainer.classList.remove("active-search");\n    }\n\n    function renderResults(data) {\n        hideLoader();\n        emptyState.classList.add("hidden");\n        searchContainer.classList.add("active-search");\n        resultCard.classList.remove("hidden");\n\n        const percent = Math.round(data.confidence * 100);\n        confidenceValue.textContent = `${percent}%`;\n        \n        // Wait minor delay to trigger CSS animation smoothly for bar\n        setTimeout(() => {\n            confidenceBar.style.width = `${percent}%`;\n        }, 50);\n\n        // Map domains\n        const isVideo = data.domain_label === "prof_video";\n        const isTrash = data.domain_label === "non_video";\n\n        if (isVideo || data.is_prof_video) {\n            statusIcon.innerHTML = icons.video;\n            statusIcon.className = "icon-box success";\n            domainTitle.textContent = "Video Content";\n            domainTitle.style.color = "var(--success-neon)";\n        } else if (isTrash) {\n            statusIcon.innerHTML = icons.trash;\n            statusIcon.className = "icon-box trash";\n            domainTitle.textContent = "Unrelated (Trash)";\n            domainTitle.style.color = "var(--text-secondary)";\n        } else {\n            statusIcon.innerHTML = icons.uncertain;\n            statusIcon.className = "icon-box";\n            domainTitle.textContent = "Uncertain";\n            domainTitle.style.color = "var(--accent-purple)";\n        }\n\n        contentType.textContent = data.content_type || "N/A";\n        extractedTitle.textContent = data.title || "No exact match";\n        \n        const decisionText = data.decision.replace("_", " ").toUpperCase();\n        pipelineDecision.textContent = decisionText;\n\n        // Render reasons as small tags\n        reasonsContainer.innerHTML = "";\n        data.reasons.forEach(r => {\n            const span = document.createElement("span");\n            span.className = "reason-tag";\n            span.textContent = r;\n            reasonsContainer.appendChild(span);\n        });\n    }\n});\n'
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.001s
+
+FAILED (failures=2, errors=8)
