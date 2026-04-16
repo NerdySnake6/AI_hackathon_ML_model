@@ -1,0 +1,50 @@
+name: CD
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  docker-delivery:
+    name: Build and smoke-test Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t query-labeler:${{ github.sha }} .
+
+      - name: Start API container
+        run: docker run --rm -d --name query-labeler -p 8000:8000 query-labeler:${{ github.sha }}
+
+      - name: Wait for API
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS http://127.0.0.1:8000/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs query-labeler
+          exit 1
+
+      - name: Smoke-test labeling endpoint
+        run: |
+          curl -fsS \
+            -X POST http://127.0.0.1:8000/label \
+            -H "Content-Type: application/json" \
+            -d '{"query_text":"сумерки"}'
+
+      - name: Save Docker image
+        run: docker save query-labeler:${{ github.sha }} -o query-labeler-image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: query-labeler-docker-image
+          path: query-labeler-image.tar
+

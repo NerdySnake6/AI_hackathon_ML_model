@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+
+jobs:
+  test:
+    name: Tests and offline checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q app scripts alembic tests
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Run offline evaluation
+        run: |
+          python scripts/evaluate.py \
+            --input data/sample_labeled_queries.csv \
+            --catalog data/sample_catalog.csv \
+            --output outputs/metrics_report.json \
+            --errors outputs/errors.csv
+
+      - name: Run batch smoke test
+        run: |
+          python scripts/run_batch.py \
+            --input data/sample_queries.csv \
+            --catalog data/sample_catalog.csv \
+            --output outputs/predictions.csv
+
+      - name: Check Alembic SQL generation
+        run: alembic upgrade head --sql > outputs/alembic.sql
+
+      - name: Check catalog import
+        run: python scripts/import_catalog.py --catalog data/sample_catalog.csv --create-tables
+
+      - name: Upload check outputs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-outputs
+          path: |
+            outputs/predictions.csv
+            outputs/metrics_report.json
+            outputs/errors.csv
+            outputs/alembic.sql
+

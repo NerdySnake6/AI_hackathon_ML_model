@@ -1,0 +1,17 @@
+query_id,query_text,expected_is_prof_video,expected_content_type,expected_title_id,expected_decision,source
+q001,1 сезон тьмы,true,series,title_001,auto_accept,demo
+q002,интерстелар смотреть онлайн,true,film,title_002,auto_accept,demo
+q003,10 троллейбус ижевск,false,,,non_video,demo
+q004,смотреть фильмы 2025 года онлайн,true,film,,generic_video,demo
+q005,кухня ремонт,false,,,non_video,demo
+q006,кухня 3 сезон,true,series,title_004,auto_accept,demo
+q007,машаи медведь новые серии,true,animated_series,title_003,auto_accept,demo
+q008,slovo pacana,true,series,title_006,auto_accept,demo
+q009,bynthcntkkfh,true,film,title_002,auto_accept,demo
+q010,купить мультиметр,false,,,non_video,demo
+q011,оно значение слова,false,,,non_video,demo
+q012,оно смотреть онлайн,true,film,title_007,auto_accept,demo
+q013,гарри потер философский камень,true,film,title_005,auto_accept,demo
+q014,сериал номер паспорта,false,,,non_video,demo
+q015,мультики для детей,true,cartoon,,generic_video,demo
+q016,сумерки,true,film,title_009,auto_accept,demo

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Query Labeler Demo</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">ML Query Labeler</div>
+        <h1>Разметка поисковых запросов</h1>
+      </div>
+      <span class="status" id="serviceStatus">Проверка API</span>
+    </header>
+
+    <section class="workspace">
+      <aside class="input-panel">
+        <nav class="tabs" aria-label="Режимы">
+          <button type="button" class="active" data-view-button="single">Один запрос</button>
+          <button type="button" data-view-button="batch">Пачка</button>
+          <button type="button" data-view-button="review">Review</button>
+        </nav>
+
+        <section class="view active" data-view="single">
+          <label for="singleQuery">Запрос</label>
+          <textarea id="singleQuery">интерстелар смотреть онлайн</textarea>
+          <div class="actions">
+            <button class="primary" type="button" id="labelSingle">Разметить</button>
+            <button type="button" id="sendToReview">В review</button>
+          </div>
+          <div class="samples" id="sampleQueries"></div>
+        </section>
+
+        <section class="view" data-view="batch">
+          <label for="batchQueries">Запросы, по одному на строку</label>
+          <textarea id="batchQueries">1 сезон тьмы
+кухня ремонт
+смотреть фильмы 2025 года онлайн
+bynthcntkkfh</textarea>
+          <div class="actions">
+            <button class="primary" type="button" id="labelBatch">Разметить пачку</button>
+            <button type="button" id="downloadBatch">Скачать CSV</button>
+          </div>
+        </section>
+
+        <section class="view" data-view="review">
+          <div class="actions">
+            <button type="button" id="clearReview">Очистить</button>
+            <button type="button" id="downloadReview">Скачать CSV</button>
+          </div>
+          <p class="notice visible" id="reviewCount">Очередь пуста</p>
+        </section>
+
+        <p class="notice" id="messageBox"></p>
+      </aside>
+
+      <section class="result-panel">
+        <div class="result-header">
+          <h2>Результат</h2>
+          <span class="badge" id="decisionBadge">ready</span>
+        </div>
+        <div id="resultPane" class="result-body">
+          <div class="empty">Введите запрос или обработайте пачку</div>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
