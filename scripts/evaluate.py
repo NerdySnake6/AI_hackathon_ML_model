@@ -84,18 +84,15 @@ def load_examples(
         reader = csv.DictReader(input_file)
         rows = list(reader)
 
-    if len(rows) > MAX_BATCH_SIZE:
-        raise ValueError(f"Batch size exceeds limit: {len(rows)} > {MAX_BATCH_SIZE}")
-
     examples: list[EvaluatedExample] = []
     for row in rows:
         expected = ExpectedLabel(
             query_id=row.get("query_id") or None,
             query_text=row["query_text"],
-            is_prof_video=parse_bool(row["expected_is_prof_video"]),
-            content_type=row.get("expected_content_type") or None,
-            title_id=row.get("expected_title_id") or None,
-            decision=row.get("expected_decision") or None,
+            is_prof_video=parse_bool(row.get("expected_is_prof_video") or row.get("is_prof_video", "false")),
+            content_type=row.get("expected_content_type") or row.get("content_type") or None,
+            title_id=row.get("expected_title_id") or row.get("title_id") or None,
+            decision=row.get("expected_decision") or row.get("decision") or None,
         )
         prediction = pipeline.label(
             QueryInput(
