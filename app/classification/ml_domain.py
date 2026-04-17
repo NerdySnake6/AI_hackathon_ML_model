@@ -10,7 +10,7 @@ from app.preprocessing.normalizer import build_normalized_query
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_PATH = Path("outputs/domain_classifier.pkl")
+DEFAULT_MODEL_PATH = Path("outputs/typequery_classifier.pkl")
 
 class MachineLearningDomainClassifier:
     """Classifies search queries as video or non-video using a trained ML model.
