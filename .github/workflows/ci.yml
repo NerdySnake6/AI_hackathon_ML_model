@@ -20,26 +20,30 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          python-version-file: ".python-version"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          uv sync --frozen
+          mkdir -p outputs
 
       - name: Compile Python sources
-        run: python -m compileall -q app scripts alembic tests
+        run: uv run python -m compileall -q app scripts alembic tests
 
       - name: Run unit tests
-        run: python -m unittest discover -s tests
+        run: uv run python -m unittest discover -s tests
 
       - name: Train ML classifier
-        run: python scripts/train_classifier.py
+        run: uv run python scripts/train_classifier.py
 
       - name: Run offline evaluation
         run: |
-          python scripts/evaluate.py \
+          uv run python scripts/evaluate.py \
             --input data/imdb_labeled_queries.csv \
             --catalog data/imdb_catalog.csv \
             --output outputs/metrics_report.json \
@@ -47,16 +51,16 @@ jobs:
 
       - name: Run batch smoke test
         run: |
-          python scripts/run_batch.py \
+          uv run python scripts/run_batch.py \
             --input data/sample_queries.csv \
             --catalog data/imdb_catalog.csv \
             --output outputs/predictions.csv
 
       - name: Check Alembic SQL generation
-        run: alembic upgrade head --sql > outputs/alembic.sql
+        run: uv run alembic upgrade head --sql > outputs/alembic.sql
 
       - name: Check catalog import
-        run: python scripts/import_catalog.py --catalog data/imdb_catalog.csv --create-tables
+        run: uv run python scripts/import_catalog.py --catalog data/imdb_catalog.csv --create-tables
 
       - name: Upload check outputs
         uses: actions/upload-artifact@v4
@@ -68,4 +72,3 @@ jobs:
             outputs/metrics_report.json
             outputs/errors.csv
             outputs/alembic.sql
-
