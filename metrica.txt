@@ -1,0 +1,8 @@
+Метрика
+typequery_f2         = F_beta(y_true, y_pred, beta=2)                   # по всем строкам
+
+contenttype_macro_f1 = macro F1 по 6 классам                            # только GT TypeQuery=1
+
+title_token_f1       = среднее token-level F1 на bag-of-words           # только GT TypeQuery=1
+
+combined_score       = 0.35 * typequery_f2 + 0.30 * contenttype_macro_f1 + 0.35 * title_token_f1
