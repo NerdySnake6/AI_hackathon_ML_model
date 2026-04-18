@@ -7,21 +7,37 @@ import os
 import json
 
 import pandas as pd
+from sklearn import __version__ as sklearn_version
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(__file__))
 
-from preprocessing import build_typo_dict, save_artifacts as save_preprocessing
+from ct_classifier import (
+    CT_ARTIFACT_FORMAT_VERSION,
+    save_artifacts as save_ct,
+    train_ct_classifier,
+)
 from franchise_dict import build_franchise_dict, save_artifacts as save_franchise
-from typequery_classifier import train_typequery_classifier, save_artifacts as save_typequery
 from embeddings import build_embedding_index, save_artifacts as save_embeddings
 from knowledge_graph import build_knowledge_graph, save_artifacts as save_knowledge_graph
-from ct_classifier import train_ct_classifier, save_artifacts as save_ct
-from supplemental_titles import load_kinopoisk_top250, merge_title_dicts
+from preprocessing import (
+    HAS_PYMORPHY,
+    build_typo_dict,
+    is_lemmatization_enabled,
+    save_artifacts as save_preprocessing,
+)
+from supplemental_titles import load_kinopoisk_top250, load_enriched_dataset, merge_title_dicts
+from typequery_classifier import train_typequery_classifier, save_artifacts as save_typequery
 
 
 def main():
     """Train all artifacts used by the offline submission bundle."""
+    print(
+        "Preprocessing mode:",
+        f"lemmatization_enabled={is_lemmatization_enabled()}",
+        f"(pymorphy3_available={HAS_PYMORPHY})",
+    )
+
     # Load training data
     print("Loading train.csv...")
     df = pd.read_csv('train.csv')
@@ -34,11 +50,35 @@ def main():
     # 1. Build franchise dictionary
     print("\n[1/5] Building franchise dictionary...")
     franchise_dict = build_franchise_dict(df)
-    supplemental_titles = load_kinopoisk_top250('kinopoisk-top250.csv')
-    if supplemental_titles:
-        franchise_dict = merge_title_dicts(franchise_dict, supplemental_titles)
+    
+    # Merge supplemental sources
+    kp_titles = load_kinopoisk_top250('kinopoisk-top250.csv')
+    if kp_titles:
+        franchise_dict = merge_title_dicts(franchise_dict, kp_titles)
+
+    enriched_titles = load_enriched_dataset('artifacts/enriched_films.csv')
+    if enriched_titles:
+        franchise_dict = merge_title_dicts(franchise_dict, enriched_titles)
+        
     save_franchise(franchise_dict)
-    print(f"  {len(franchise_dict)} canonical titles")
+    
+    if is_lemmatization_enabled():
+        print("  Expanding dictionary with lemmatized variants...")
+        from scripts.expand_variants import expand_variants
+
+        expand_variants()
+    else:
+        print("  Lemmatization disabled; skipping variant expansion.")
+    
+    # Re-load the expanded dict for subsequent steps (like embeddings)
+    from franchise_dict import load_artifacts as load_franchise
+    artifacts = load_franchise('artifacts/franchise_dict.json')
+    if 'franchise_dict' in artifacts:
+        franchise_dict = artifacts['franchise_dict']
+    else:
+        franchise_dict = artifacts
+    
+    print(f"  {len(franchise_dict)} canonical titles (expanded)")
 
     # 2. Build typo dictionary
     print("\n[2/5] Building typo dictionary...")
@@ -56,7 +96,7 @@ def main():
 
     # 4. Build embedding index
     print("\n[4/5] Building embedding index...")
-    vectorizer, prototypes, prototype_info = build_embedding_index(df)
+    vectorizer, prototypes, prototype_info = build_embedding_index(df, franchise_dict=franchise_dict)
     save_embeddings(vectorizer, prototypes, prototype_info)
     print(f"  {len(prototypes)} franchise prototypes")
 
@@ -72,7 +112,7 @@ def main():
 
     # 6. Train ContentType classifier
     print("\n[6/6] Training ContentType classifier...")
-    ct_model, ct_tfidf = train_ct_classifier(df)
+    ct_model, ct_tfidf = train_ct_classifier(df, franchise_dict=franchise_dict)
     save_ct(ct_model, ct_tfidf)
     print("  Done")
 
@@ -80,8 +120,14 @@ def main():
     metadata = {
         'n_train': len(df),
         'n_titles': len(franchise_dict),
-        'n_supplemental_titles': len(supplemental_titles),
+        'n_supplemental_kp': len(kp_titles) if 'kp_titles' in locals() else 0,
+        'n_supplemental_enriched': len(enriched_titles) if 'enriched_titles' in locals() else 0,
+        'lemmatization_enabled': is_lemmatization_enabled(),
+        'pymorphy3_available_local': HAS_PYMORPHY,
         'typequery_threshold': float(threshold),
+        'ct_model_class': type(ct_model).__name__ if ct_model is not None else None,
+        'ct_artifact_format_version': CT_ARTIFACT_FORMAT_VERSION,
+        'sklearn_version': sklearn_version,
     }
     with open('artifacts/metadata.json', 'w', encoding='utf-8') as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)

@@ -75,32 +75,77 @@ def build_franchise_dict(df) -> dict:
             all_queries.extend(title_data[t]['queries'])
             total_count += title_data[t]['count']
 
+        # Extract year/season from all queries in cluster
+        years = []
+        seasons = []
+        for q in all_queries:
+            y = re.search(r'\b(19[5-9]\d|20[0-2]\d)\b', q)
+            if y: years.append(y.group(1))
+            s = re.search(r'(\d+)\s*(?:сезон|season|s\b)', q, re.IGNORECASE)
+            if s: seasons.append(s.group(1))
+            
         final[best_title] = {
             'contentType': all_content_types.most_common(1)[0][0] if all_content_types else '',
             'variants': list(all_variants),
             'count': total_count,
+            'year': Counter(years).most_common(1)[0][0] if years else None,
+            'season': Counter(seasons).most_common(1)[0][0] if seasons else None,
         }
 
     return final
 
 
 def save_artifacts(franchise_dict: dict, path: str = "artifacts/franchise_dict.json"):
-    """Save the franchise dictionary artifact to disk."""
+    """Save the franchise dictionary and pre-computed maps to disk."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    # Convert sets to lists for JSON
+    
+    # 1. Store the basic dict
     serializable = {}
     for title, data in franchise_dict.items():
         serializable[title] = {
             'contentType': data['contentType'],
-            'variants': data['variants'],
+            'variants': list(data['variants']),
             'count': data['count'],
         }
+    
+    # 2. Pre-compute maps to avoid runtime normalization overhead
+    variant_map = {}
+    normalized_title_map = {}
+    canonical_to_norm_map = {}
+    lemma_variant_map = {} # (title, lemmas_list)
+    
+    # Simple helper for map building (copied from FranchiseMatcher logic)
+    for title, data in franchise_dict.items():
+        norm_t = normalize(title, use_lemmatization=False)
+        if norm_t:
+            normalized_title_map[norm_t] = title
+            canonical_to_norm_map[title] = norm_t
+        
+        for v in data['variants']:
+            v_norm = normalize(v, use_lemmatization=False)
+            if v_norm:
+                variant_map[v_norm] = title
+            
+            v_lemma_str = normalize(v, use_lemmatization=True)
+            if v_lemma_str:
+                v_lemma_list = v_lemma_str.split()
+                sorted_v_lemma = " ".join(sorted(v_lemma_list))
+                lemma_variant_map[sorted_v_lemma] = (title, v_lemma_list)
+
+    output = {
+        'franchise_dict': serializable,
+        'variant_map': variant_map,
+        'normalized_title_map': normalized_title_map,
+        'canonical_to_norm_map': canonical_to_norm_map,
+        'lemma_variant_map': lemma_variant_map
+    }
+    
     with open(path, 'w', encoding='utf-8') as f:
-        json.dump(serializable, f, ensure_ascii=False, indent=2)
+        json.dump(output, f, ensure_ascii=False, indent=2)
 
 
 def load_artifacts(path: str = "artifacts/franchise_dict.json") -> dict:
-    """Load the franchise dictionary artifact from disk."""
+    """Load the franchise artifacts from disk."""
     if os.path.exists(path):
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -110,32 +155,14 @@ def load_artifacts(path: str = "artifacts/franchise_dict.json") -> dict:
 class FranchiseMatcher:
     """Fuzzy matching against canonical franchise dictionary."""
 
-    def __init__(self, franchise_dict: dict):
-        self.franchise_dict = franchise_dict
-        self.variant_map = {}
-        self.canonical_titles = []
-        self.normalized_titles = {}
-        self.normalized_title_map = {}
-
-        for title, data in franchise_dict.items():
-            self.canonical_titles.append(title)
-            normalized_title = normalize(title)
-            self.normalized_titles[title] = normalized_title
-            existing_title = self.normalized_title_map.get(normalized_title)
-            if not existing_title or self._is_better_title(title, existing_title):
-                self.normalized_title_map[normalized_title] = title
-
-            for variant in data.get('variants', []):
-                normalized_variant = normalize(variant)
-                if normalized_variant:
-                    existing_variant_title = self.variant_map.get(normalized_variant)
-                    if not existing_variant_title or self._is_better_title(title, existing_variant_title):
-                        self.variant_map[normalized_variant] = title
-
-            if normalized_title:
-                existing_variant_title = self.variant_map.get(normalized_title)
-                if not existing_variant_title or self._is_better_title(title, existing_variant_title):
-                    self.variant_map[normalized_title] = title
+    def __init__(self, artifacts: dict):
+        self.franchise_dict = artifacts.get('franchise_dict', {})
+        self.variant_map = artifacts.get('variant_map', {})
+        self.normalized_title_map = artifacts.get('normalized_title_map', {})
+        self.lemma_variant_map = artifacts.get('lemma_variant_map', {})
+        
+        self.normalized_titles_list = list(self.normalized_title_map.keys())
+        self.normalized_titles = artifacts.get('canonical_to_norm_map', {})
 
     def _is_better_title(self, candidate: str, current: str) -> bool:
         """Return True when the candidate is a better canonical display title."""
@@ -151,96 +178,153 @@ class FranchiseMatcher:
         )
         return candidate_score > current_score
 
+    SPAN_TRIM_WORDS = {
+        "смотреть", "онлайн", "бесплатно", "скачать", "торрент",
+        "хорошем", "качестве", "hd", "720p", "1080p", "4k",
+        "фильм", "сериал", "мультфильм", "мультсериал", "аниме",
+        "все", "серии", "сезон", "серия", "эпизод",
+        "в", "и", "с", "а", "но", "на", "для",
+        "ютуб", "youtube", "вк", "vk", "дата", "выхода", "актеры",
+        "сюжет", "отзывы", "кино", "видео", "трейлер",
+    }
+
     def match(self, query: str) -> tuple:
         """
         Match query against franchise dictionary.
-        Returns (canonical_title, contentType, confidence, match_type)
-        match_type: 'exact' | 'fuzzy' | 'substring' | None
+        Returns (canonical_title, matched_span, contentType, confidence, match_type)
+        Fast: orig_lemmas computed once, no slow subset pass, extractOne with cutoff.
         """
-        norm = normalize(query)
-        words = set(norm.split())
+        norm_raw = normalize(query, use_lemmatization=False)
+        norm_lemma = normalize(query, use_lemmatization=True)
+        query_tokens_raw = norm_raw.split()
+        query_tokens_lemma = norm_lemma.split()
+
+        # Pre-compute ONCE — used by find_best_span
+        orig_tokens = query.split()
+        orig_lemmas = [normalize(t, use_lemmatization=True) for t in orig_tokens]
+
+        # Metadata extraction for year-based disambiguation
+        query_year = None
+        _ym = re.search(r'\b(19[5-9]\d|20[0-2]\d)\b', query)
+        if _ym:
+            query_year = _ym.group(1)
+
+        # Pre-compute clean query for fuzzy once
+        _noise = {"смотреть", "онлайн", "бесплатно", "скачать", "торрент",
+                  "хорошем", "качестве", "hd", "720p", "1080p", "4k",
+                  "фильм", "сериал", "все", "серии", "сезон", "в", "и", "с"}
+        clean_query = " ".join(w for w in query_tokens_raw if w not in _noise) or norm_raw
+
+        def trim_span(span: str) -> str:
+            tokens = span.split()
+            while tokens and tokens[0].lower() in self.SPAN_TRIM_WORDS:
+                tokens.pop(0)
+            while tokens and tokens[-1].lower() in self.SPAN_TRIM_WORDS:
+                tokens.pop()
+            return " ".join(tokens)
+
+        def find_best_span(target_tokens_lemma: list) -> str:
+            """Robust span extractor with translit and fuzzy support."""
+            if not target_tokens_lemma: return ""
+            target_set = set(target_tokens_lemma)
+            n = len(target_tokens_lemma)
+            
+            # Pre-compute transliterated lemmas for the whole query once
+            from preprocessing import transliterate, detect_translit
+            query_lemmas_translit = []
+            for t in orig_tokens:
+                if detect_translit(t):
+                    t_cyr = transliterate(t)
+                    query_lemmas_translit.append(normalize(t_cyr, use_lemmatization=True))
+                else:
+                    query_lemmas_translit.append(normalize(t, use_lemmatization=True))
+
+            best_span_str = ""
+            max_overlap = 0
+
+            # Try windows of size n to n+2
+            for ws in range(n, min(n + 3, len(orig_lemmas) + 1)):
+                for i in range(len(orig_lemmas) - ws + 1):
+                    # Combine regular lemmas and translit lemmas for this window
+                    window_lemmas = set()
+                    for ls in orig_lemmas[i:i + ws]:
+                        window_lemmas.update(ls.split())
+                    for ls in query_lemmas_translit[i:i + ws]:
+                        window_lemmas.update(ls.split())
+                    
+                    overlap = len(window_lemmas & target_set)
+                    if overlap == n: # Perfect match (even with translit)
+                        return trim_span(" ".join(orig_tokens[i:i + ws]))
+                    
+                    if overlap > max_overlap:
+                        max_overlap = overlap
+                        best_span_str = " ".join(orig_tokens[i:i + ws])
+            
+            # Fuzzy fallback: if we matched most of the title, return it
+            if n > 1 and max_overlap >= (n * 0.7):
+                return trim_span(best_span_str)
+            
+            return ""
 
         # 1. Exact match on variants
-        if norm in self.variant_map:
-            canonical = self.variant_map[norm]
+        if norm_raw in self.variant_map:
+            canonical = self.variant_map[norm_raw]
             data = self.franchise_dict[canonical]
-            return canonical, data['contentType'], 0.95, 'exact'
+            span = find_best_span(normalize(canonical, use_lemmatization=True).split())
+            return canonical, span, data['contentType'], 0.95, 'exact'
 
-        # 2. Exact match on normalized canonical title
-        if norm in self.normalized_title_map:
-            canonical = self.normalized_title_map[norm]
+        # 2. Lemma match (exact sequence of lemmas)
+        sorted_lemma = " ".join(sorted(query_tokens_lemma))
+        if sorted_lemma in self.lemma_variant_map:
+            canonical, target_lemmas = self.lemma_variant_map[sorted_lemma]
             data = self.franchise_dict[canonical]
-            return canonical, data['contentType'], 0.95, 'exact'
+            span = find_best_span(target_lemmas)
+            return canonical, span, data['contentType'], 0.90, 'lemma_match'
 
-        # 3. Substring match: check if query contains a canonical title
-        for title in self.canonical_titles:
-            normalized_title = self.normalized_titles.get(title, "")
-            if (
-                normalized_title
-                and normalized_title in norm
-                and (len(normalized_title) > 3 or len(normalized_title.split()) > 1)
-            ):
-                data = self.franchise_dict[title]
-                return title, data['contentType'], 0.75, 'substring'
+        # 3. Lemma overlap (only for multi-word queries)
+        if len(query_tokens_lemma) >= 2:
+            best_title, best_len, best_lemmas = None, 0, []
+            query_lemma_set = set(query_tokens_lemma)
+            for _, (title, tl) in self.lemma_variant_map.items():
+                tls = set(tl)
+                if len(tls) >= 2 and tls.issubset(query_lemma_set) and len(tls) > best_len:
+                    best_len, best_title, best_lemmas = len(tls), title, tl
+            if best_title:
+                data = self.franchise_dict[best_title]
+                span = find_best_span(best_lemmas)
+                return best_title, span, data['contentType'], 0.85, 'lemma_overlap'
 
-        # 4. Fuzzy match on canonical titles
-        if len(norm) > 3:
+        # 4. Fuzzy match — extractOne with score_cutoff (fastest path)
+        if len(clean_query) > 3:
             best = process.extractOne(
-                norm,
-                list(self.normalized_title_map.keys()),
-                scorer=fuzz.partial_ratio,
-                score_cutoff=65,
+                clean_query,
+                self.normalized_titles_list,
+                scorer=fuzz.token_set_ratio,
+                score_cutoff=78,
             )
             if best:
-                normalized_canonical, score, _ = best
-                canonical = self.normalized_title_map[normalized_canonical]
-                # Reject very short titles unless strong overlap
-                if len(normalized_canonical) < 4:
-                    if score < 85:
-                        return '', '', 0.0, None
-                # Require meaningful word overlap for fuzzy matches
-                title_words = set(normalized_canonical.split())
-                query_words = set(norm.split())
-                word_overlap = len(title_words & query_words)
-                n_title_words = len(title_words)
-
-                if n_title_words >= 2 and word_overlap == 0:
-                    # No shared words at all — reject unless very high score
-                    if score < 80:
-                        return '', '', 0.0, None
-                elif n_title_words >= 2 and word_overlap == 1:
-                    # Only 1 shared word — require higher score
-                    # Reject if the shared word is a common adjective (country/language)
-                    common_adj = {'английский', 'американский', 'российский', 'турецкий',
-                                  'корейский', 'китайский', 'японский', 'французский',
-                                  'немецкий', 'итальянский', 'испанский', 'советский'}
-                    shared = title_words & query_words
-                    if shared & common_adj and score < 85:
-                        return '', '', 0.0, None
-                    if score < 75:
-                        return '', '', 0.0, None
-
-                conf = score / 100.0 * 0.8
+                norm_can, score, _ = best
+                if len(norm_can) < 4 and score < 88:
+                    return '', '', '', 0.0, None
+                canonical = self.normalized_title_map[norm_can]
                 data = self.franchise_dict[canonical]
-                return canonical, data['contentType'], conf, 'fuzzy'
+                # Year boost
+                if query_year and data.get('year') == query_year:
+                    score = min(score + 10, 100)
+                conf = score / 100.0 * 0.8
+                # Fast span: token set intersection
+                tw = set(norm_can.split())
+                best_span = ""
+                for i in range(len(query_tokens_raw)):
+                    for j in range(i + 1, len(query_tokens_raw) + 1):
+                        if set(query_tokens_raw[i:j]) == tw:
+                            best_span = trim_span(" ".join(orig_tokens[i:j]))
+                            break
+                    if best_span:
+                        break
+                return canonical, best_span, data['contentType'], conf, 'fuzzy'
 
-        # 5. Word overlap heuristic
-        best_overlap = 0
-        best_title = None
-        for title in self.canonical_titles:
-            title_words = set(self.normalized_titles.get(title, "").split())
-            if not title_words:
-                continue
-            overlap = len(words & title_words) / max(len(title_words), 1)
-            if overlap > best_overlap and overlap >= 0.4:
-                # Reject very short single-word titles unless strong overlap
-                if len(title) < 5 and len(title_words) == 1:
-                    continue
-                best_overlap = overlap
-                best_title = title
+        return '', '', '', 0.0, None
 
-        if best_title and len(best_title.split()) >= 2:
-            data = self.franchise_dict[best_title]
-            return best_title, data['contentType'], best_overlap * 0.7, 'word_overlap'
 
-        return '', '', 0.0, None
+

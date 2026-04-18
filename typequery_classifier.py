@@ -18,7 +18,8 @@ def train_typequery_classifier(df, random_state: int = 42):
     Train a TypeQuery classifier combining TF-IDF and hand-crafted features.
     Returns (model, tfidf_vectorizer, feature_scaler, threshold).
     """
-    X_text = df['QueryText'].tolist()
+    X_text_raw = df['QueryText'].tolist()
+    X_text = [normalize(t, use_lemmatization=True) for t in X_text_raw]
     y = df['TypeQuery'].values
 
     # Split for threshold tuning
@@ -119,7 +120,8 @@ class TypeQueryClassifier:
         Predict TypeQuery for a list of queries.
         Returns (predictions: list[int], probabilities: list[float]).
         """
-        tfidf_features = self.tfidf.transform(queries)
+        normalized_queries = [normalize(t, use_lemmatization=True) for t in queries]
+        tfidf_features = self.tfidf.transform(normalized_queries)
         hand_features = np.array([features_to_vector(extract_features(t)) for t in queries])
 
         from scipy.sparse import hstack, csr_matrix

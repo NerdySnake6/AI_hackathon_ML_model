@@ -7,25 +7,26 @@ from rapidfuzz import fuzz
 
 
 def aggregate_predictions(
-    franchise_match: tuple,       # (title, contentType, confidence, match_type)
+    franchise_match: tuple,       # (canonical_title, matched_span, contentType, confidence, match_type)
     embedding_matches: list,       # [(title, contentType, confidence), ...]
     graph_matches: list,           # [(title, contentType, confidence), ...]
 ) -> dict:
     """
     Aggregate predictions from three branches.
+
     Returns dict with: title, contentType, confidence, agreement
     """
     candidates = []
 
     # Branch 1: Franchise dictionary (highest priority)
-    fm_title, fm_ct, fm_conf, fm_type = franchise_match
+    fm_title, fm_span, fm_ct, fm_conf, fm_type = franchise_match
     if fm_title:
         candidates.append({
             'title': fm_title,
             'contentType': fm_ct,
             'confidence': fm_conf,
             'branch': 'franchise',
-            'weight': 1.5 if fm_type == 'exact' else 1.0,
+            'weight': 2.0 if fm_type == 'exact' else 1.8 if fm_type == 'lemma_match' else 1.6 if fm_type == 'lemma_overlap' else 1.2,
         })
 
     # Branch 2: Embedding matches

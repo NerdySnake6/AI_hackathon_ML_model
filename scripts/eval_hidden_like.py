@@ -55,11 +55,12 @@ from knowledge_graph import (
     load_artifacts as load_knowledge_graph,
     save_artifacts as save_knowledge_graph,
 )
-from preprocessing import detect_translit, load_artifacts as load_preprocessing
+from preprocessing import HAS_PYMORPHY, detect_translit, load_artifacts as load_preprocessing
 from preprocessing import save_artifacts as save_preprocessing
-from preprocessing import transliterate
+from preprocessing import is_lemmatization_enabled, transliterate
 from preprocessing import build_typo_dict, normalize
 from supplemental_titles import load_kinopoisk_top250, merge_title_dicts
+from supplemental_titles import load_enriched_dataset
 from title_retrieval import TitleRetriever
 from typequery_classifier import (
     TypeQueryClassifier,
@@ -114,10 +115,13 @@ class LocalPredictionModel:
             TypeQueryClassifier(tq_model, tq_tfidf, tq_threshold) if tq_model is not None else None
         )
 
-        franchise_dict = load_franchise(str(artifact_dir / "franchise_dict.json"))
-        supplemental_titles = load_kinopoisk_top250(repo_root / "kinopoisk-top250.csv")
-        franchise_dict = merge_title_dicts(franchise_dict, supplemental_titles)
-        self._franchise_matcher = FranchiseMatcher(franchise_dict) if franchise_dict else None
+        franchise_artifacts = load_franchise(str(artifact_dir / "franchise_dict.json"))
+        if "franchise_dict" in franchise_artifacts:
+            franchise_dict = franchise_artifacts["franchise_dict"]
+            self._franchise_matcher = FranchiseMatcher(franchise_artifacts)
+        else:
+            franchise_dict = franchise_artifacts
+            self._franchise_matcher = FranchiseMatcher({"franchise_dict": franchise_dict})
         self._title_retriever = TitleRetriever(franchise_dict) if franchise_dict else None
 
         vectorizer, prototypes, prototype_info = load_embeddings(str(artifact_dir / "embeddings.pkl"))
@@ -173,7 +177,12 @@ class LocalPredictionModel:
                 self._embedding_matcher._is_generic_query(query_cyr) if self._embedding_matcher is not None else False
             )
 
-            fm_result = self._franchise_matcher.match(query_cyr) if self._franchise_matcher else ("", "", 0.0, None)
+            fm_result = (
+                self._franchise_matcher.match(query_cyr)
+                if self._franchise_matcher
+                else ("", "", "", 0.0, None)
+            )
+            fm_title, fm_span, fm_ct, fm_conf, fm_type = fm_result
             em_results = self._embedding_matcher.match(query_cyr) if self._embedding_matcher else []
             gm_results = self._graph_matcher.match(query_cyr) if self._graph_matcher else []
             if is_generic:
@@ -183,24 +192,40 @@ class LocalPredictionModel:
             title_content_type = ""
             title_source = ""
 
-            if fm_result[3] == "exact" and len(fm_result[0]) >= 2 and not fm_result[0].isdigit():
-                title = fm_result[0]
-                title_content_type = fm_result[1]
+            if fm_title and self._is_exact_query_title_match(query_cyr, fm_title):
+                title = fm_title
+                title_content_type = fm_ct
+                title_source = "franchise_exact_substring"
+            elif (
+                retrieval
+                and retrieval.title
+                and self._is_exact_query_title_match(query_cyr, retrieval.title)
+            ):
+                title = retrieval.title
+                title_content_type = retrieval.content_type
+                title_source = f"{retrieval.source}_exact_substring"
+            elif fm_type == "exact" and len(fm_title) >= 2 and not fm_title.isdigit():
+                title = fm_title
+                title_content_type = fm_ct
                 title_source = "franchise_exact"
+            elif fm_title and fm_conf >= 0.85:
+                title = fm_title
+                title_content_type = fm_ct
+                title_source = f"franchise_{fm_type}_strong"
             elif retrieval and retrieval.title and retrieval.confidence >= 0.84:
                 title = retrieval.title
                 title_content_type = retrieval.content_type
                 title_source = retrieval.source
-            elif fm_result[3] == "substring" and fm_result[2] > 0.5:
-                if len(fm_result[0]) >= 2 and not fm_result[0].isdigit():
-                    title_words = set(fm_result[0].split())
+            elif fm_type == "substring" and fm_conf > 0.5:
+                if len(fm_title) >= 2 and not fm_title.isdigit():
+                    title_words = set(fm_title.split())
                     query_words = set(normalize(query_cyr).split())
                     overlap = len(title_words & query_words) / max(len(title_words), 1)
-                    if overlap >= 0.5 or fm_result[2] > 0.75:
-                        title = fm_result[0]
-                        title_content_type = fm_result[1]
+                    if overlap >= 0.5 or fm_conf > 0.75:
+                        title = fm_title
+                        title_content_type = fm_ct
                         title_source = "franchise_substring"
-            elif (fm_result[0] or em_results or gm_results) and not is_generic:
+            elif (fm_title or em_results or gm_results) and not is_generic:
                 agg = aggregate_predictions(fm_result, em_results, gm_results)
                 if agg["title"] and agg["confidence"] > 0.15 and agg["agreement"] > 0.0:
                     is_consistent = not raw_candidate
@@ -217,19 +242,19 @@ class LocalPredictionModel:
                         title_content_type = agg["contentType"]
                         title_source = "aggregate"
 
-            if not title and fm_result[3] == "fuzzy" and fm_result[2] > 0.6 and not is_generic:
-                if len(fm_result[0]) >= 3 and not fm_result[0].isdigit():
+            if not title and fm_type == "fuzzy" and fm_conf > 0.6 and not is_generic:
+                if len(fm_title) >= 3 and not fm_title.isdigit():
                     is_consistent = not raw_candidate
                     if retrieval and raw_candidate:
-                        is_consistent = self._title_retriever.is_match_consistent(raw_candidate, fm_result[0])
-                    is_query_compatible = self._title_retriever.is_query_compatible(query_cyr, fm_result[0])
+                        is_consistent = self._title_retriever.is_match_consistent(raw_candidate, fm_title)
+                    is_query_compatible = self._title_retriever.is_query_compatible(query_cyr, fm_title)
                     if (
                         is_consistent
                         and is_query_compatible
-                        and (len(fm_result[0]) >= 5 or fm_result[2] >= 0.75)
+                        and (len(fm_title) >= 5 or fm_conf >= 0.75)
                     ):
-                        title = fm_result[0]
-                        title_content_type = fm_result[1]
+                        title = fm_title
+                        title_content_type = fm_ct
                         title_source = "franchise_fuzzy"
 
             if (
@@ -241,6 +266,11 @@ class LocalPredictionModel:
                 title = raw_candidate
                 title_content_type = retrieval.content_type
                 title_source = retrieval.source or "raw"
+
+            if title and self._should_ignore_short_title(query_cyr, title):
+                title = ""
+                title_content_type = ""
+                title_source = ""
 
             model_content_type = ""
             model_margin = None
@@ -258,6 +288,23 @@ class LocalPredictionModel:
             out.at[index, "ContentType"] = _map_content_type(calibrated_ct or detect_ct_from_words(query))
 
         return out
+
+    @staticmethod
+    def _is_exact_query_title_match(query: str, title: str) -> bool:
+        """Return True when the normalized title appears verbatim in the query."""
+        normalized_query = normalize(query)
+        normalized_title = normalize(title)
+        if not normalized_query or not normalized_title:
+            return False
+        return f" {normalized_title} " in f" {normalized_query} "
+
+    @classmethod
+    def _should_ignore_short_title(cls, query: str, title: str) -> bool:
+        """Reject 1-2 character titles unless they are an exact query match."""
+        compact_title = "".join(normalize(title).split())
+        if not compact_title or compact_title.isdigit():
+            return False
+        return len(compact_title) <= 2 and not cls._is_exact_query_title_match(query, title)
 
     @staticmethod
     def _heuristic_typequery(query: str) -> int:
@@ -375,14 +422,42 @@ def subsample_validation_df(
     return df.loc[sorted(sampled_idx)].copy()
 
 
+def build_submission_style_franchise_dict(train_df: pd.DataFrame, repo_root: Path) -> tuple[dict, dict[str, int]]:
+    """Build the same enriched franchise dictionary shape as the production trainer."""
+    franchise_dict = build_franchise_dict(train_df)
+
+    supplemental_titles = load_kinopoisk_top250(repo_root / "kinopoisk-top250.csv")
+    if supplemental_titles:
+        franchise_dict = merge_title_dicts(franchise_dict, supplemental_titles)
+
+    enriched_titles = load_enriched_dataset(repo_root / "artifacts" / "enriched_films.csv")
+    if enriched_titles:
+        franchise_dict = merge_title_dicts(franchise_dict, enriched_titles)
+
+    if is_lemmatization_enabled():
+        # Mirror train.py expansion so lemma-aware variants are available in eval too.
+        for data in franchise_dict.values():
+            variants = set(data.get("variants", []))
+            lemma_variants = {
+                normalize(variant, use_lemmatization=True)
+                for variant in variants
+                if variant
+            }
+            variants.update(variant for variant in lemma_variants if variant)
+            data["variants"] = sorted(variants)
+
+    stats = {
+        "n_supplemental_titles": int(len(supplemental_titles)),
+        "n_enriched_titles": int(len(enriched_titles)),
+    }
+    return franchise_dict, stats
+
+
 def train_artifacts(train_df: pd.DataFrame, artifact_dir: Path, repo_root: Path) -> None:
     """Train all artifacts needed by the local pipeline into a temp directory."""
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    franchise_dict = build_franchise_dict(train_df)
-    supplemental_titles = load_kinopoisk_top250(repo_root / "kinopoisk-top250.csv")
-    if supplemental_titles:
-        franchise_dict = merge_title_dicts(franchise_dict, supplemental_titles)
+    franchise_dict, franchise_stats = build_submission_style_franchise_dict(train_df, repo_root)
     save_franchise(franchise_dict, str(artifact_dir / "franchise_dict.json"))
 
     canonical_titles = list(franchise_dict.keys())
@@ -392,7 +467,7 @@ def train_artifacts(train_df: pd.DataFrame, artifact_dir: Path, repo_root: Path)
     tq_model, tq_tfidf, tq_threshold = train_typequery_classifier(train_df)
     save_typequery(tq_model, tq_tfidf, tq_threshold, str(artifact_dir / "typequery_model.pkl"))
 
-    vectorizer, prototypes, prototype_info = build_embedding_index(train_df)
+    vectorizer, prototypes, prototype_info = build_embedding_index(train_df, franchise_dict=franchise_dict)
     save_embeddings(vectorizer, prototypes, prototype_info, str(artifact_dir / "embeddings.pkl"))
 
     edges, node_types = build_knowledge_graph(train_df)
@@ -407,13 +482,16 @@ def train_artifacts(train_df: pd.DataFrame, artifact_dir: Path, repo_root: Path)
         str(artifact_dir / "knowledge_graph.json"),
     )
 
-    ct_model, ct_tfidf = train_ct_classifier(train_df)
+    ct_model, ct_tfidf = train_ct_classifier(train_df, franchise_dict=franchise_dict)
     save_ct(ct_model, ct_tfidf, str(artifact_dir / "ct_classifier.pkl"))
 
     metadata = {
         "n_train": int(len(train_df)),
         "n_titles": int(len(franchise_dict)),
-        "n_supplemental_titles": int(len(supplemental_titles)),
+        "n_supplemental_titles": franchise_stats["n_supplemental_titles"],
+        "n_enriched_titles": franchise_stats["n_enriched_titles"],
+        "lemmatization_enabled": is_lemmatization_enabled(),
+        "pymorphy3_available_local": HAS_PYMORPHY,
         "typequery_threshold": float(tq_threshold),
     }
     (artifact_dir / "metadata.json").write_text(
@@ -490,10 +568,7 @@ def train_artifacts_fast_proxy(train_df: pd.DataFrame, artifact_dir: Path, repo_
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     print("  [fast_proxy] build franchise_dict", flush=True)
-    franchise_dict = build_franchise_dict(train_df)
-    supplemental_titles = load_kinopoisk_top250(repo_root / "kinopoisk-top250.csv")
-    if supplemental_titles:
-        franchise_dict = merge_title_dicts(franchise_dict, supplemental_titles)
+    franchise_dict, franchise_stats = build_submission_style_franchise_dict(train_df, repo_root)
     save_franchise(franchise_dict, str(artifact_dir / "franchise_dict.json"))
 
     print("  [fast_proxy] build typo_dict", flush=True)
@@ -506,7 +581,7 @@ def train_artifacts_fast_proxy(train_df: pd.DataFrame, artifact_dir: Path, repo_
     save_typequery(tq_model, tq_tfidf, tq_threshold, str(artifact_dir / "typequery_model.pkl"))
 
     print("  [fast_proxy] build embeddings", flush=True)
-    vectorizer, prototypes, prototype_info = build_embedding_index(train_df)
+    vectorizer, prototypes, prototype_info = build_embedding_index(train_df, franchise_dict=franchise_dict)
     save_embeddings(vectorizer, prototypes, prototype_info, str(artifact_dir / "embeddings.pkl"))
 
     print("  [fast_proxy] build knowledge graph", flush=True)
@@ -523,13 +598,16 @@ def train_artifacts_fast_proxy(train_df: pd.DataFrame, artifact_dir: Path, repo_
     )
 
     print("  [fast_proxy] train contenttype proxy", flush=True)
-    ct_model, ct_features = train_ct_classifier(train_df)
+    ct_model, ct_features = train_ct_classifier(train_df, franchise_dict=franchise_dict)
     save_ct(ct_model, ct_features, str(artifact_dir / "ct_classifier.pkl"))
 
     metadata = {
         "n_train": int(len(train_df)),
         "n_titles": int(len(franchise_dict)),
-        "n_supplemental_titles": int(len(supplemental_titles)),
+        "n_supplemental_titles": franchise_stats["n_supplemental_titles"],
+        "n_enriched_titles": franchise_stats["n_enriched_titles"],
+        "lemmatization_enabled": is_lemmatization_enabled(),
+        "pymorphy3_available_local": HAS_PYMORPHY,
         "training_mode": "fast_proxy",
         "typequery_threshold": float(tq_threshold),
     }

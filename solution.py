@@ -10,6 +10,7 @@ Implements PredictionModel with a cascading pipeline:
   4. Fallbacks: CT classifier + title extraction
 """
 import sys
+
 import json
 from pathlib import Path
 
@@ -19,10 +20,9 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-# Bundled dependencies (libs/ directory inside the bundle)
 _LIBS = _ROOT / "libs"
 if _LIBS.is_dir() and str(_LIBS) not in sys.path:
-    sys.path.insert(0, str(_LIBS))
+    sys.path.append(str(_LIBS))
 
 from preprocessing import normalize, load_artifacts as load_preprocessing
 from preprocessing import detect_translit, transliterate
@@ -82,11 +82,16 @@ class PredictionModel:
         self._tq_classifier = TypeQueryClassifier(model, tfidf, threshold) if model else None
 
         # Franchise dictionary
-        franchise_dict = load_franchise(str(art_dir / 'franchise_dict.json'))
-        supplemental_titles = load_kinopoisk_top250(_ROOT / 'kinopoisk-top250.csv')
-        franchise_dict = merge_title_dicts(franchise_dict, supplemental_titles)
-        self._franchise_matcher = FranchiseMatcher(franchise_dict) if franchise_dict else None
-        self._title_retriever = TitleRetriever(franchise_dict) if franchise_dict else None
+        franchise_artifacts = load_franchise(str(art_dir / 'franchise_dict.json'))
+        # The actual dict is under 'franchise_dict' key in the new format
+        if 'franchise_dict' in franchise_artifacts:
+            f_dict = franchise_artifacts['franchise_dict']
+            self._franchise_matcher = FranchiseMatcher(franchise_artifacts)
+        else:
+            f_dict = franchise_artifacts
+            self._franchise_matcher = FranchiseMatcher({'franchise_dict': f_dict})
+            
+        self._title_retriever = TitleRetriever(f_dict) if f_dict else None
 
         # Embedding index
         vectorizer, prototypes, prototype_info = load_embeddings(str(art_dir / 'embeddings.pkl'))
@@ -150,14 +155,23 @@ class PredictionModel:
         else:
             ct_preds = None
 
+        # Pre-compute transliterated queries and embedding matches for the whole batch
+        positive_queries_cyr = []
+        for q in positive_queries:
+            if detect_translit(q):
+                positive_queries_cyr.append(transliterate(q))
+            else:
+                positive_queries_cyr.append(q)
+
+        if self._embedding_matcher:
+            em_batch_results = self._embedding_matcher.match_batch(positive_queries_cyr)
+        else:
+            em_batch_results = [[] for _ in positive_queries]
+
         for batch_offset in range(len(positive_indices)):
             idx = positive_indices[batch_offset]
             query = positive_queries[batch_offset]
-
-            # Detect transliteration
-            query_cyr = query
-            if detect_translit(query):
-                query_cyr = transliterate(query)
+            query_cyr = positive_queries_cyr[batch_offset]
 
             retrieval = self._title_retriever.retrieve(query_cyr) if self._title_retriever else None
             raw_candidate = retrieval.raw_candidate if retrieval else ''
@@ -169,13 +183,12 @@ class PredictionModel:
             if self._franchise_matcher:
                 fm_result = self._franchise_matcher.match(query_cyr)
             else:
-                fm_result = ('', '', 0.0, None)
+                fm_result = ('', '', '', 0.0, None)
+            
+            fm_title, fm_span, fm_ct, fm_conf, fm_type = fm_result
 
-            # Branch 2: Embedding matching
-            if self._embedding_matcher:
-                em_results = self._embedding_matcher.match(query_cyr)
-            else:
-                em_results = []
+            # Branch 2: Embedding matching (already pre-computed)
+            em_results = em_batch_results[batch_offset]
 
             # Branch 3: Knowledge graph
             if self._graph_matcher:
@@ -191,30 +204,58 @@ class PredictionModel:
             title_content_type = ''
             title_source = ''
 
-            # Strategy A: Exact franchise match (highest priority)
-            if fm_result[3] == 'exact' and len(fm_result[0]) >= 2 and not fm_result[0].isdigit():
-                title = fm_result[0]
-                title_content_type = fm_result[1]
+            # Strategy A: Exact title substring from the catalog (highest priority)
+            if fm_title and self._is_exact_query_title_match(query_cyr, fm_title):
+                title = fm_title
+                title_content_type = fm_ct
+                title_source = 'franchise_exact_substring'
+            elif (
+                retrieval
+                and retrieval.title
+                and self._is_exact_query_title_match(query_cyr, retrieval.title)
+            ):
+                title = retrieval.title
+                title_content_type = retrieval.content_type
+                title_source = f'{retrieval.source}_exact_substring'
+
+            # Strategy B: Exact franchise match
+            elif fm_type == 'exact' and len(fm_title) >= 2 and not fm_title.isdigit():
+                # For exact match, we usually expect fm_span. If missing, take whole query
+                title = fm_span if fm_span else query_cyr
+                title_content_type = fm_ct
                 title_source = 'franchise_exact'
 
-            # Strategy B: Retrieval-first catalog correction
+            # Strategy C: High-confidence dictionary match (lemma/overlap)
+            elif fm_title and fm_conf >= 0.85:
+                # If we have a span, use it. Otherwise try to fallback to retrieval candidate
+                if fm_span:
+                    title = fm_span
+                elif retrieval and retrieval.title and fm_conf > 0.9:
+                    title = retrieval.title
+                else:
+                    title = fm_span # Might be empty, which is better than wrong
+                
+                title_content_type = fm_ct
+                title_source = f'franchise_{fm_type}_strong'
+
+            # Strategy D: Retrieval-first catalog correction
             elif retrieval and retrieval.title and retrieval.confidence >= 0.84:
                 title = retrieval.title
                 title_content_type = retrieval.content_type
                 title_source = retrieval.source
 
-            # Strategy C: Substring match with overlap check
-            elif fm_result[3] == 'substring' and fm_result[2] > 0.5:
-                if len(fm_result[0]) >= 2 and not fm_result[0].isdigit():
-                    title_words = set(fm_result[0].split())
+            # Strategy E: Substring match with overlap check
+            elif fm_type == 'substring' and fm_conf > 0.5:
+                if len(fm_title) >= 2 and not fm_title.isdigit():
+                    title_words = set(fm_title.split())
                     query_words = set(normalize(query_cyr).split())
                     overlap = len(title_words & query_words) / max(len(title_words), 1)
-                    if overlap >= 0.5 or fm_result[2] > 0.75:
-                        title = fm_result[0]
-                        title_content_type = fm_result[1]
+                    if overlap >= 0.5 or fm_conf > 0.75:
+                        title = fm_span if fm_span else (retrieval.title if retrieval else '')
+                        title_content_type = fm_ct
                         title_source = 'franchise_substring'
 
-            # Strategy D: Aggregated result from all branches — skip for generic
+            # Strategy F: Aggregated result from all branches — skip for generic
             elif (fm_result[0] or em_results or gm_results) and not is_generic:
                 agg = aggregate_predictions(fm_result, em_results, gm_results)
                 if agg['title'] and agg['confidence'] > 0.15 and agg['agreement'] > 0.0:
@@ -232,7 +273,7 @@ class PredictionModel:
                         title_content_type = agg['contentType']
                         title_source = 'aggregate'
 
-            # Strategy E: Partial franchise match — skip for generic queries
+            # Strategy F: Partial franchise match — skip for generic queries
             if not title and fm_result[3] == 'fuzzy' and fm_result[2] > 0.6 and not is_generic:
                 # Extra protection: reject very short titles and generic queries
                 if len(fm_result[0]) >= 3 and not fm_result[0].isdigit():
@@ -247,11 +288,11 @@ class PredictionModel:
                     elif not self._title_retriever.is_query_compatible(query_cyr, fm_result[0]):
                         pass
                     else:
-                        title = fm_result[0]
-                        title_content_type = fm_result[1]
+                        title = fm_result[1] if fm_result[1] else (raw_candidate if raw_candidate else '')
+                        title_content_type = fm_result[2] # fm_ct is index 2
                         title_source = 'franchise_fuzzy'
 
-            # Strategy F: Retrieval-first raw span fallback.
+            # Strategy G: Retrieval-first raw span fallback.
             if (
                 not title
                 and retrieval
@@ -261,6 +302,26 @@ class PredictionModel:
                 title = raw_candidate
                 title_content_type = retrieval.content_type
                 title_source = retrieval.source or 'raw'
+
+            # Last resort: if we identified a title (fm_title) but have no span,
+            # try to find it as a direct substring or use the retrieval's guess.
+            if not title and fm_title:
+                # A: Direct substring search
+                if self._is_exact_query_title_match(query_cyr, fm_title):
+                    title = fm_title
+                    title_source = 'direct_substring'
+                # B: Fallback to retrieval title if it exists
+                elif retrieval and retrieval.title:
+                    title = retrieval.title
+                    title_source = 'retrieval_fallback'
+                
+                if title:
+                    title_content_type = fm_ct or (retrieval.content_type if retrieval else '')
+
+            if title and self._should_ignore_short_title(query_cyr, title):
+                title = ''
+                title_content_type = ''
+                title_source = ''
 
             # ---- Determine content type ----
             model_content_type = ''
@@ -283,6 +344,23 @@ class PredictionModel:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    @staticmethod
+    def _is_exact_query_title_match(query: str, title: str) -> bool:
+        """Return True when the normalized title appears verbatim in the query."""
+        normalized_query = normalize(query)
+        normalized_title = normalize(title)
+        if not normalized_query or not normalized_title:
+            return False
+        return f" {normalized_title} " in f" {normalized_query} "
+
+    @classmethod
+    def _should_ignore_short_title(cls, query: str, title: str) -> bool:
+        """Reject 1-2 character titles unless they are an exact query match."""
+        compact_title = "".join(normalize(title).split())
+        if not compact_title or compact_title.isdigit():
+            return False
+        return len(compact_title) <= 2 and not cls._is_exact_query_title_match(query, title)
+
     @staticmethod
     def _heuristic_typequery(query: str) -> int:
         """Fallback heuristic for TypeQuery when model is unavailable."""

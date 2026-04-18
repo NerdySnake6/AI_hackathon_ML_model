@@ -76,17 +76,24 @@ def calibrate_content_type(
     normalized_model_ct = _normalize_label(model_content_type)
 
     strong_hint = hint.label if hint.score >= 4 or (hint.score >= 3 and hint.dominance >= 2) else ""
-    model_is_weak = model_margin is None or model_margin < 0.35
-    title_is_strong = title_source in {"franchise_exact", "franchise_substring"}
+    # Very strong hints (e.g. "мультфильм", "аниме") should almost always win
+    is_very_strong_hint = hint.score >= 5 or (hint.label in {"мультфильм", "мультсериал"} and hint.score >= 3)
+    
+    model_is_weak = model_margin is None or model_margin < 0.45
+    title_is_strong = title_source in {"franchise_exact", "franchise_substring", "franchise_lemma_match_strong"}
     title_is_weak = title_source in {"raw", "catalog_fuzzy", "aggregate", "franchise_fuzzy", ""}
+
+    if is_very_strong_hint:
+        return hint.label
 
     if strong_hint:
         if normalized_title_ct and normalized_title_ct == strong_hint:
             return normalized_title_ct
         if normalized_model_ct and normalized_model_ct == strong_hint:
             return normalized_model_ct
+        # If hint disagrees with title, trust hint if title is weak or hint is about cartoons
         if normalized_title_ct and normalized_title_ct != strong_hint:
-            if title_is_weak or strong_hint in {"мультфильм", "мультсериал"} or model_is_weak:
+            if title_is_weak or strong_hint in {"мультфильм", "мультсериал"} or hint.dominance >= 3:
                 return strong_hint
         if normalized_model_ct and normalized_model_ct != strong_hint:
             if model_is_weak or strong_hint in {"мультфильм", "мультсериал"}:

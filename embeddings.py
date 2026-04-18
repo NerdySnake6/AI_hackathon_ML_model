@@ -11,21 +11,35 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-def build_embedding_index(df, n_features: int = 50000, ngram_range=(1, 2)):
+def build_embedding_index(df, franchise_dict=None, n_features: int = 50000, ngram_range=(1, 2)):
     """
     Build TF-IDF vectors for all labeled queries and compute prototype vectors per franchise.
+    Also includes all titles from franchise_dict as prototypes.
     Returns (vectorizer, prototypes, prototype_info).
     """
+    from preprocessing import normalize
     labeled = df[df['Title'].notna()].copy()
     labeled['norm_title'] = labeled['Title'].str.strip().str.lower()
-    labeled = labeled.reset_index(drop=True)  # Reset to positional indices
+    labeled = labeled.reset_index(drop=True)
 
-    # Group by title
-    title_groups = labeled.groupby('norm_title')
+    # Initial queries from training data
+    train_queries = [normalize(q, use_lemmatization=True) for q in labeled['QueryText'].tolist()]
+    
+    # Add synthetic queries for each canonical title in franchise_dict to ensure coverage
+    synthetic_data = []
+    if franchise_dict:
+        for title, data in franchise_dict.items():
+            # Use title and its variants as synthetic queries
+            norm_title = normalize(title, use_lemmatization=True)
+            synthetic_data.append({'title': title, 'query': norm_title, 'contentType': data['contentType']})
+            for variant in data.get('variants', []):
+                norm_variant = normalize(variant, use_lemmatization=True)
+                if norm_variant and norm_variant != norm_title:
+                    synthetic_data.append({'title': title, 'query': norm_variant, 'contentType': data['contentType']})
 
-    queries_list = labeled['QueryText'].tolist()
+    all_queries = train_queries + [d['query'] for d in synthetic_data]
 
-    # Build TF-IDF on all labeled queries
+    # Build TF-IDF on all queries
     vectorizer = TfidfVectorizer(
         max_features=n_features,
         ngram_range=ngram_range,
@@ -33,23 +47,45 @@ def build_embedding_index(df, n_features: int = 50000, ngram_range=(1, 2)):
         min_df=2,
         max_df=0.95,
     )
-    tfidf_matrix = vectorizer.fit_transform(queries_list)
+    tfidf_matrix = vectorizer.fit_transform(all_queries)
 
-    # Compute prototype vector per franchise (mean of TF-IDF vectors)
+    # Compute prototype vector per franchise
     prototypes = {}
     prototype_info = {}
 
-    for title, group in title_groups:
-        pos_indices = group.index.tolist()  # Now positional (0-based)
-        if not pos_indices:
-            continue
+    # Map titles to their vector indices
+    title_to_indices = {}
+    
+    # 1. From training data
+    for idx, row in labeled.iterrows():
+        title = row['norm_title']
+        if title not in title_to_indices: title_to_indices[title] = []
+        title_to_indices[title].append(idx)
+        
+    # 2. From synthetic data
+    train_count = len(train_queries)
+    for i, d in enumerate(synthetic_data):
+        title = d['title']
+        if title not in title_to_indices: title_to_indices[title] = []
+        title_to_indices[title].append(train_count + i)
+
+    for title, indices in title_to_indices.items():
         # Mean TF-IDF vector
-        prototype = tfidf_matrix[pos_indices].mean(axis=0)
+        prototype = tfidf_matrix[indices].mean(axis=0)
         prototypes[title] = np.asarray(prototype).flatten()
-        ct = Counter(group['ContentType'].tolist())
+        
+        # Determine content type (prefer train data if available)
+        if franchise_dict and title in franchise_dict:
+            ct = franchise_dict[title]['contentType']
+        else:
+            # Fallback to train data
+            group = labeled[labeled['norm_title'] == title]
+            ct_counter = Counter(group['ContentType'].tolist())
+            ct = ct_counter.most_common(1)[0][0] if ct_counter else ''
+            
         prototype_info[title] = {
-            'contentType': ct.most_common(1)[0][0] if ct else '',
-            'count': len(group),
+            'contentType': ct,
+            'count': len(indices),
         }
 
     return vectorizer, prototypes, prototype_info
@@ -142,35 +178,54 @@ class EmbeddingMatcher:
         Match query against franchise prototypes.
         Returns list of (title, contentType, confidence) sorted by confidence.
         """
+        results = self.match_batch([query], top_k=top_k, threshold=threshold)
+        return results[0]
+
+    def match_batch(self, queries: list[str], top_k: int = 3, threshold: float = 0.15) -> list[list[tuple[str, str, float]]]:
+        """
+        Match a batch of queries against franchise prototypes using vectorized operations.
+        Returns a list (one per query) of lists of (title, contentType, confidence).
+        """
         from preprocessing import normalize
 
-        if self._proto_matrix is None or self.vectorizer is None:
-            return []
+        if self._proto_matrix is None or self.vectorizer is None or not queries:
+            return [[] for _ in queries]
 
-        # Skip embedding matching for generic queries
-        if self._is_generic_query(query):
-            return []
+        # Prepare results placeholder
+        batch_results = [[] for _ in queries]
+        valid_indices = []
+        normalized_queries = []
 
-        norm = normalize(query)
-        # Transform query
+        for i, q in enumerate(queries):
+            if not self._is_generic_query(q):
+                valid_indices.append(i)
+                normalized_queries.append(normalize(q, use_lemmatization=True))
+
+        if not valid_indices:
+            return batch_results
+
+        # Vectorized transform and similarity
         try:
-            query_vec = self.vectorizer.transform([norm])
-            # query_vec is (1, n_features) sparse matrix
-            query_dense = np.asarray(query_vec.todense()).flatten()
+            query_matrix = self.vectorizer.transform(normalized_queries)
+            # query_matrix is (len(valid_indices), n_features) sparse
+            # self._proto_matrix is (n_titles, n_features) dense
+            sim_matrix = cosine_similarity(query_matrix, self._proto_matrix)
+            # sim_matrix is (len(valid_indices), n_titles) dense
         except Exception:
-            return []
+            return batch_results
 
-        # Compute cosine similarity to all prototypes
-        sims = cosine_similarity(query_dense.reshape(1, -1), self._proto_matrix)[0]
+        # Process results for each valid query
+        for i, v_idx in enumerate(valid_indices):
+            sims = sim_matrix[i]
+            top_indices = np.argsort(sims)[::-1][:top_k]
+            
+            res = []
+            for t_idx in top_indices:
+                sim = float(sims[t_idx])
+                if sim >= threshold:
+                    title = self._title_order[t_idx]
+                    info = self.prototype_info.get(title, {})
+                    res.append((title, info.get('contentType', ''), sim))
+            batch_results[v_idx] = res
 
-        # Get top-k
-        top_indices = np.argsort(sims)[::-1][:top_k]
-        results = []
-        for idx in top_indices:
-            title = self._title_order[idx]
-            sim = float(sims[idx])
-            if sim >= threshold:
-                info = self.prototype_info.get(title, {})
-                results.append((title, info.get('contentType', ''), sim))
-
-        return results
+        return batch_results

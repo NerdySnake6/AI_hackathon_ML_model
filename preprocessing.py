@@ -1,19 +1,45 @@
 """
 Text preprocessing module: normalization, transliteration correction,
 typo fixing, feature extraction for the TypeQuery classifier.
+
+Lemmatization is intentionally disabled by default to match the evaluation
+sandbox, where `pymorphy3` is unavailable. It can be re-enabled locally for
+experiments via the `MEDIASCOPE_ENABLE_LEMMATIZATION=1` environment variable.
 """
-import re
 import json
 import os
-import string
+import re
 from collections import Counter
-from pathlib import Path
+
+try:
+    import pymorphy3
+
+    _morph = pymorphy3.MorphAnalyzer()
+    HAS_PYMORPHY = True
+except ImportError:
+    _morph = None
+    HAS_PYMORPHY = False
+except Exception:
+    _morph = None
+    HAS_PYMORPHY = False
+
+_lemma_cache = {}
+LEMMATIZATION_ENV_VAR = "MEDIASCOPE_ENABLE_LEMMATIZATION"
+_LEMMATIZATION_ENABLED = (
+    HAS_PYMORPHY
+    and os.environ.get(LEMMATIZATION_ENV_VAR, "0").strip().lower() in {"1", "true", "yes", "on"}
+)
 
 # ---------- transliteration map ----------
 # (defined below, after detect_translit)
 
 # Common typo dictionary (built from training data, saved/loaded)
 _typo_dict: dict = {}
+
+
+def is_lemmatization_enabled() -> bool:
+    """Return whether lemmatization is enabled for the current process."""
+    return _LEMMATIZATION_ENABLED
 
 
 def build_typo_dict(queries: list[str], canonical_titles: list[str], threshold: int = 2) -> dict:
@@ -41,12 +67,14 @@ def build_typo_dict(queries: list[str], canonical_titles: list[str], threshold: 
 
 
 def save_artifacts(typo_dict: dict, path: str = "artifacts/typo_dict.json"):
+    """Persist typo-correction artifacts to disk."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(typo_dict, f, ensure_ascii=False, indent=2)
 
 
 def load_artifacts(path: str = "artifacts/typo_dict.json"):
+    """Load typo-correction artifacts into the module cache."""
     global _typo_dict
     if os.path.exists(path):
         with open(path, 'r', encoding='utf-8') as f:
@@ -54,14 +82,24 @@ def load_artifacts(path: str = "artifacts/typo_dict.json"):
     return _typo_dict
 
 
-def normalize(text: str) -> str:
-    """Lower, strip special chars, collapse whitespace."""
+def normalize(text: str, use_lemmatization: bool = False) -> str:
+    """Lower, strip special chars, collapse whitespace, and optionally lemmatize."""
     if not isinstance(text, str):
         return ""
     t = text.lower().strip()
     # Keep Russian + Latin letters, digits, spaces
     t = re.sub(r'[^a-zа-яё0-9\s]', ' ', t, flags=re.IGNORECASE)
     t = re.sub(r'\s+', ' ', t).strip()
+    
+    if use_lemmatization and is_lemmatization_enabled():
+        words = t.split()
+        lemmas = []
+        for w in words:
+            if w not in _lemma_cache:
+                _lemma_cache[w] = _morph.parse(w)[0].normal_form
+            lemmas.append(_lemma_cache[w])
+        return " ".join(lemmas)
+    
     return t
 
 
