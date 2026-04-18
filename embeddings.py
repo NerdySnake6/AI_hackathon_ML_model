@@ -114,14 +114,28 @@ class EmbeddingMatcher:
             'все', 'подряд', 'все серии', 'мы', 'мой', 'мне', 'меня',
             'наш', 'ваш', 'свой', 'твой',
         }
+        broad_generic_words = {
+            'фильмы', 'сериалы', 'мультфильмы', 'мультсериалы',
+            'аниме', 'дорамы', 'новинки', 'топ', 'лучшие', 'лучший',
+            'русские', 'корейские', 'турецкие', 'американские',
+        }
 
         # If query contains ONLY generic words + maybe season/episode numbers
-        non_generic = words - generic_words
-        # Remove pure numbers (seasons/episodes)
-        non_generic = {w for w in non_generic if not w.isdigit()}
+        non_generic = {
+            word
+            for word in words
+            if word not in generic_words and not word.isdigit()
+        }
 
-        # If 1 or fewer non-generic words, it's generic
-        return len(non_generic) <= 1
+        if not non_generic:
+            return True
+
+        has_broad_context = bool(words & broad_generic_words)
+        if len(non_generic) == 1:
+            # One-word queries can still be exact titles ("крик", "теща").
+            return has_broad_context
+
+        return has_broad_context and len(non_generic) <= 2
 
     def match(self, query: str, top_k: int = 3, threshold: float = 0.15):
         """

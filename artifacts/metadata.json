@@ -1,5 +1,6 @@
 {
   "n_train": 13999,
-  "n_titles": 4802,
+  "n_titles": 4952,
+  "n_supplemental_titles": 250,
   "typequery_threshold": 0.2599999999999999
 }
