@@ -149,15 +149,15 @@ class PredictionModel:
 
         positive_queries = [queries[i] for i in positive_indices]
 
-        # Pre-compute CT classifier predictions for all positive queries
+        # Pre-compute CT classifier predictions for all queries
         if self._ct_classifier is not None:
-            ct_preds = self._ct_classifier.predict_with_margins(positive_queries)
+            ct_preds = self._ct_classifier.predict_with_margins(queries)
         else:
             ct_preds = None
 
         # Pre-compute transliterated queries and embedding matches for the whole batch
         positive_queries_cyr = []
-        for q in positive_queries:
+        for q in queries:
             if detect_translit(q):
                 positive_queries_cyr.append(transliterate(q))
             else:
@@ -166,11 +166,12 @@ class PredictionModel:
         if self._embedding_matcher:
             em_batch_results = self._embedding_matcher.match_batch(positive_queries_cyr)
         else:
-            em_batch_results = [[] for _ in positive_queries]
+            em_batch_results = [[] for _ in queries]
 
-        for batch_offset in range(len(positive_indices)):
-            idx = positive_indices[batch_offset]
-            query = positive_queries[batch_offset]
+        # Process all queries to allow TypeQuery override
+        for batch_offset in range(len(queries)):
+            idx = batch_offset
+            query = queries[batch_offset]
             query_cyr = positive_queries_cyr[batch_offset]
 
             retrieval = self._title_retriever.retrieve(query_cyr) if self._title_retriever else None
@@ -203,6 +204,7 @@ class PredictionModel:
             title = ''
             title_content_type = ''
             title_source = ''
+            agg = None
 
             # Strategy A: Exact title substring from the catalog (highest priority)
             if fm_title and self._is_exact_query_title_match(query_cyr, fm_title):
@@ -221,7 +223,7 @@ class PredictionModel:
             # Strategy B: Exact franchise match
             elif fm_type == 'exact' and len(fm_title) >= 2 and not fm_title.isdigit():
                 # For exact match, we usually expect fm_span. If missing, take whole query
-                title = fm_span if fm_span else query_cyr
+                title = fm_title if fm_title else query_cyr
                 title_content_type = fm_ct
                 title_source = 'franchise_exact'
 
@@ -229,17 +231,16 @@ class PredictionModel:
             elif fm_title and fm_conf >= 0.85:
                 # If we have a span, use it. Otherwise try to fallback to retrieval candidate
                 if fm_span:
-                    title = fm_span
+                    title = fm_title
                 elif retrieval and retrieval.title and fm_conf > 0.9:
                     title = retrieval.title
                 else:
-                    title = fm_span # Might be empty, which is better than wrong
-                
+                    title = fm_title  # Favor canonical over span
                 title_content_type = fm_ct
                 title_source = f'franchise_{fm_type}_strong'
 
             # Strategy D: Retrieval-first catalog correction
-            elif retrieval and retrieval.title and retrieval.confidence >= 0.84:
+            elif retrieval and retrieval.title and retrieval.confidence >= 0.70:
                 title = retrieval.title
                 title_content_type = retrieval.content_type
                 title_source = retrieval.source
@@ -250,15 +251,26 @@ class PredictionModel:
                     title_words = set(fm_title.split())
                     query_words = set(normalize(query_cyr).split())
                     overlap = len(title_words & query_words) / max(len(title_words), 1)
-                    if overlap >= 0.5 or fm_conf > 0.75:
-                        title = fm_span if fm_span else (retrieval.title if retrieval else '')
+                    if overlap >= 0.20 or fm_conf > 0.70:
+                        title = fm_title if fm_title else (retrieval.title if retrieval else '')
                         title_content_type = fm_ct
                         title_source = 'franchise_substring'
+
+            # Strategy G: High-confidence fuzzy match (typo recovery)
+            if not title and fm_result[3] == 'fuzzy' and fm_result[2] > 0.82 and not is_generic:
+                if len(fm_result[0]) >= 4 and not fm_result[0].isdigit():
+                    is_consistent = not raw_candidate
+                    if retrieval and raw_candidate:
+                        is_consistent = self._title_retriever.is_match_consistent(raw_candidate, fm_result[0])
+                    if is_consistent and self._title_retriever.is_query_compatible(query_cyr, fm_result[0]):
+                        title = fm_title if fm_title else fm_result[1]
+                        title_content_type = fm_ct
+                        title_source = 'franchise_fuzzy_strict'
 
             # Strategy F: Aggregated result from all branches — skip for generic
             elif (fm_result[0] or em_results or gm_results) and not is_generic:
                 agg = aggregate_predictions(fm_result, em_results, gm_results)
-                if agg['title'] and agg['confidence'] > 0.15 and agg['agreement'] > 0.0:
+                if agg['title'] and agg['confidence'] > 0.20 and agg['agreement'] > 0.40:
                     is_consistent = not raw_candidate
                     if retrieval and raw_candidate:
                         is_consistent = self._title_retriever.is_match_consistent(raw_candidate, agg['title'])
@@ -273,31 +285,14 @@ class PredictionModel:
                         title_content_type = agg['contentType']
                         title_source = 'aggregate'
 
-            # Strategy F: Partial franchise match — skip for generic queries
-            if not title and fm_result[3] == 'fuzzy' and fm_result[2] > 0.6 and not is_generic:
-                # Extra protection: reject very short titles and generic queries
-                if len(fm_result[0]) >= 3 and not fm_result[0].isdigit():
-                    # For short titles, require higher confidence
-                    is_consistent = not raw_candidate
-                    if retrieval and raw_candidate:
-                        is_consistent = self._title_retriever.is_match_consistent(raw_candidate, fm_result[0])
-                    if not is_consistent:
-                        pass
-                    elif len(fm_result[0]) < 5 and fm_result[2] < 0.75:
-                        pass  # skip
-                    elif not self._title_retriever.is_query_compatible(query_cyr, fm_result[0]):
-                        pass
-                    else:
-                        title = fm_result[1] if fm_result[1] else (raw_candidate if raw_candidate else '')
-                        title_content_type = fm_result[2] # fm_ct is index 2
-                        title_source = 'franchise_fuzzy'
 
-            # Strategy G: Retrieval-first raw span fallback.
+            # Strategy H: Retrieval-first raw span fallback.
             if (
                 not title
                 and retrieval
                 and raw_candidate
                 and self._title_retriever.should_accept_raw_candidate(query_cyr, raw_candidate)
+                and (len(raw_candidate.split()) >= 2 or self._is_exact_query_title_match(query_cyr, raw_candidate))
             ):
                 title = raw_candidate
                 title_content_type = retrieval.content_type
@@ -306,15 +301,13 @@ class PredictionModel:
             # Last resort: if we identified a title (fm_title) but have no span,
             # try to find it as a direct substring or use the retrieval's guess.
             if not title and fm_title:
-                # A: Direct substring search
                 if self._is_exact_query_title_match(query_cyr, fm_title):
                     title = fm_title
                     title_source = 'direct_substring'
-                # B: Fallback to retrieval title if it exists
                 elif retrieval and retrieval.title:
                     title = retrieval.title
                     title_source = 'retrieval_fallback'
-                
+
                 if title:
                     title_content_type = fm_ct or (retrieval.content_type if retrieval else '')
 
@@ -329,15 +322,22 @@ class PredictionModel:
             if ct_preds:
                 model_content_type, model_margin = ct_preds[batch_offset]
 
-            out.at[idx, 'Title'] = title
-            calibrated_ct = calibrate_content_type(
-                query=query,
-                title_content_type=title_content_type,
-                model_content_type=model_content_type,
-                model_margin=model_margin,
-                title_source=title_source,
-            )
-            out.at[idx, 'ContentType'] = _map_content_type(calibrated_ct or detect_ct_from_words(query))
+            if title_source in {'franchise_exact_substring', 'franchise_exact', 'retrieval_catalog_exact', 'franchise_substring', 'franchise_fuzzy_strict'} or (title and agg and agg.get('agreement', 0) >= 1.0):
+                out.at[idx, 'TypeQuery'] = 1
+
+            if out.at[idx, 'TypeQuery'] == 1:
+                out.at[idx, 'Title'] = title
+                calibrated_ct = calibrate_content_type(
+                    query=query,
+                    title_content_type=title_content_type,
+                    model_content_type=model_content_type,
+                    model_margin=model_margin,
+                    title_source=title_source,
+                )
+                out.at[idx, 'ContentType'] = _map_content_type(calibrated_ct or detect_ct_from_words(query))
+            else:
+                out.at[idx, 'Title'] = ''
+                out.at[idx, 'ContentType'] = _map_content_type(detect_ct_from_words(query))
 
         return out
 

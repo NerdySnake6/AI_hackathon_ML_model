@@ -77,7 +77,12 @@ def calibrate_content_type(
 
     strong_hint = hint.label if hint.score >= 4 or (hint.score >= 3 and hint.dominance >= 2) else ""
     # Very strong hints (e.g. "мультфильм", "аниме") should almost always win
-    is_very_strong_hint = hint.score >= 5 or (hint.label in {"мультфильм", "мультсериал"} and hint.score >= 3)
+    is_very_strong_hint = (
+        hint.score >= 5 or 
+        (hint.label in {"мультфильм", "мультсериал", "сериал"} and hint.score >= 3) or
+        (hint.label != "" and hint.dominance >= 4) or
+        (any(w in query.lower() for w in ["аниме", "дорама", "т/с", "х/ф"]))
+    )
     
     model_is_weak = model_margin is None or model_margin < 0.45
     title_is_strong = title_source in {"franchise_exact", "franchise_substring", "franchise_lemma_match_strong"}
@@ -100,7 +105,7 @@ def calibrate_content_type(
                 return strong_hint
         return strong_hint
 
-    if normalized_title_ct and (title_is_strong or not normalized_model_ct):
+    if normalized_title_ct and (title_is_strong or not normalized_model_ct or model_is_weak):
         return normalized_title_ct
 
     if normalized_model_ct:

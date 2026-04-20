@@ -2,10 +2,14 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+.temp_venv/
 .env
 .ipynb_checkpoints/
 data/*
 !data/.gitkeep
+train.csv
+artifacts/*
+!artifacts/.gitkeep
 *.zip
 .DS_Store
 dist/
