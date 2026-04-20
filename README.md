@@ -1,20 +1,33 @@
-# Mediascope Hackathon Solution
+# Классификатор поисковых медиазапросов
 
-Решение для кейса Mediascope на AI Business SPB Hackathon. Проект содержит Python-модель, которая принимает датасет с поисковыми запросами и возвращает тот же датасет с предсказанной разметкой по колонкам `TypeQuery`, `Title` и `ContentType`.
+ML-пайплайн для классификации поисковых запросов по полям `TypeQuery`, `Title` и `ContentType`.
 
-## Что делает решение
+Этот репозиторий представляет собой портфолио-версию хакатонного проекта, выполненного по кейсу компании **Mediascope**. Решение обрабатывает шумные пользовательские запросы с опечатками, транслитерацией и неполным намерением и предсказывает:
 
-Основная точка входа находится в `solution.py`:
+- относится ли запрос к профессиональному видеоконтенту
+- какое нормализованное название или франшиза упоминается в запросе
+- какой тип контента соответствует запросу: `фильм`, `сериал`, `мультфильм`, `мультсериал` и другие категории
 
-- класс `PredictionModel`
-- публичный метод `predict(df: pd.DataFrame) -> pd.DataFrame`
+## Контекст проекта
 
-Ожидаемый вход:
+Оригинальное решение разрабатывалось в команде из 3 человек в рамках хакатона.
 
-- `pd.DataFrame`
-- обязательная колонка `QueryText`
+Этот репозиторий отражает мой финальный вклад в проект: интеграцию всего пайплайна, доработку инференса, стабилизацию решения, подготовку артефактов модели и доведение проекта до итогового рабочего состояния.
 
-Ожидаемый выход:
+Проект выполнялся в команде вместе с [snugforce-web](https://github.com/snugforce-web) и [tiver211](https://github.com/tiver211).
+
+Часть ранних наработок и некоторых исходных идей опиралась на вклад моего сокомандника [snugforce-web](https://github.com/snugforce-web).
+
+## Что делает проект
+
+Основная точка входа находится в классе `PredictionModel` в [solution.py](/Users/nerdysnake6/Documents/%20ML_модель/solution.py).
+
+Вход:
+
+- `pandas.DataFrame`
+- обязательная колонка: `QueryText`
+
+Выход:
 
 - `QueryText`
 - `TypeQuery`
@@ -23,41 +36,34 @@
 
 ## Архитектура
 
-Решение построено как каскадный пайплайн:
+Решение использует каскадный пайплайн:
 
-1. Классификация `TypeQuery`
-2. Поиск `Title` через словарь франшиз, retrieval и embedding-based matching
-3. Предсказание и калибровка `ContentType`
-4. Агрегация сигналов в итоговый ответ
+1. классификация `TypeQuery`
+2. поиск названия через словарь франшиз, retrieval и embedding-based matching
+3. предсказание и калибровка `ContentType`
+4. агрегация конкурирующих сигналов в финальный ответ
 
 Ключевые файлы:
 
-- `solution.py` — инференс и класс `PredictionModel`
-- `train.py` — обучение и генерация артефактов
-- `ct_classifier.py` — классификатор `ContentType`
-- `title_retrieval.py` — retrieval для названий
-- `franchise_dict.py` — словарь франшиз и матчинг
-- `embeddings.py` — embedding / TF-IDF индекс
-- `knowledge_graph.py` — граф знаний
-- `aggregator.py` — объединение сигналов
-- `scripts/submit.py` — сборка и отправка `bundle.zip`
-- `scripts/eval_hidden_like.py` — локальная hidden-like проверка
+- [solution.py](/Users/nerdysnake6/Documents/%20ML_модель/solution.py): инференс и класс `PredictionModel`
+- [train.py](/Users/nerdysnake6/Documents/%20ML_модель/train.py): обучение и генерация артефактов
+- [typequery_classifier.py](/Users/nerdysnake6/Documents/%20ML_модель/typequery_classifier.py): модель `TypeQuery`
+- [title_retrieval.py](/Users/nerdysnake6/Documents/%20ML_модель/title_retrieval.py): retrieval для названий
+- [franchise_dict.py](/Users/nerdysnake6/Documents/%20ML_модель/franchise_dict.py): словарный матчинг
+- [embeddings.py](/Users/nerdysnake6/Documents/%20ML_модель/embeddings.py): векторизация и индекс эмбеддингов
+- [knowledge_graph.py](/Users/nerdysnake6/Documents/%20ML_модель/knowledge_graph.py): графовые признаки и матчинги
+- [aggregator.py](/Users/nerdysnake6/Documents/%20ML_модель/aggregator.py): объединение сигналов
+- [scripts/eval_hidden_like.py](/Users/nerdysnake6/Documents/%20ML_модель/scripts/eval_hidden_like.py): локальная hidden-like оценка
 
-## Требования
+## Стек
 
-- Python `>= 3.11`
-
-Основные библиотеки:
-
-- `pandas`
-- `numpy`
-- `scikit-learn`
-- `rapidfuzz`
-- `pymorphy3`
-- `pymorphy3-dicts-ru`
-- `scipy`
-- `requests`
-- `python-dotenv`
+- Python 3.11+
+- pandas
+- numpy
+- scikit-learn
+- rapidfuzz
+- scipy
+- pymorphy3
 
 ## Установка
 
@@ -77,26 +83,19 @@ pip install -r requirements.txt
 
 ## Данные
 
-Если `train.csv` уже лежит в корне проекта, можно сразу запускать обучение.
+Для обучения ожидается локальный файл `train.csv` в корне проекта.
 
-Если нужно скачать тренировочные данные с сервера:
-
-```bash
-export API_KEY=your_key
-python3 scripts/download_data.py
-```
-
-Скрипт положит данные в директорию `data/`.
+Исходный датасет не включен в эту портфолио-версию репозитория.
 
 ## Обучение артефактов
 
-Для генерации всех артефактов, которые использует `PredictionModel`, запусти:
+Чтобы собрать все артефакты, используемые инференс-пайплайном:
 
 ```bash
 python3 train.py
 ```
 
-После успешного обучения в директории `artifacts/` появятся, в частности:
+После этого в директории `artifacts/` появятся, в частности:
 
 - `typequery_model.pkl`
 - `ct_classifier.pkl`
@@ -105,7 +104,7 @@ python3 train.py
 - `knowledge_graph.json`
 - `metadata.json`
 
-## Использование модели
+## Запуск инференса
 
 Минимальный пример:
 
@@ -124,60 +123,20 @@ df = pd.DataFrame(
 )
 
 model = PredictionModel()
-pred = model.predict(df)
-print(pred)
+predictions = model.predict(df)
+print(predictions)
 ```
 
-Ожидаемый результат — `DataFrame` с колонками:
+## Локальная оценка
 
-- `QueryText`
-- `TypeQuery`
-- `Title`
-- `ContentType`
-
-## Локальная проверка
-
-Для быстрой hidden-like оценки можно использовать:
+Для быстрой hidden-like проверки:
 
 ```bash
 python3 scripts/eval_hidden_like.py --split title_group_holdout --mode fast_proxy --validation-fraction 0.2 --max-valid-rows 200 --seed 42
 ```
 
-Это полезно для локальной проверки того, как решение обобщается на unseen-title сценарии.
-
-## Сборка архива
-
-Для сборки сдаваемого архива:
-
-```bash
-python3 -c "from scripts.submit import build_bundle; build_bundle()"
-```
-
-Скрипт:
-
-- проверит наличие обязательных артефактов
-- провалится раньше времени, если `ct_classifier.pkl` устарел или несовместим
-- соберёт `bundle.zip` в корне проекта
-
-## Отправка решения
-
-Если нужно отправить архив через API:
-
-```bash
-export API_KEY=your_key
-python3 scripts/submit.py
-```
-
-Скрипт:
-
-- соберёт `bundle.zip`
-- отправит его на сервер
-- будет опрашивать статус сабмита до завершения
-
 ## Примечания
 
-- Submission-сборка по умолчанию использует режим без лемматизации, чтобы train и inference совпадали с окружением sandbox.
-- Не включай `MEDIASCOPE_ENABLE_LEMMATIZATION=1` для leaderboard-сабмита, если не контролируешь то же окружение на стороне оценки.
-- Перед финальной сборкой архива рекомендуется заново выполнить `python3 train.py`, чтобы артефакты точно соответствовали текущему коду.
-- Основной сдаваемый интерфейс — это `PredictionModel` из `solution.py`.
-- Проект ориентирован на офлайн-инференс по батчам входных запросов.
+- Репозиторий ориентирован на офлайн-инференс и локальную работу с артефактами.
+- Сгенерированные артефакты и приватные датасеты намеренно исключены из репозитория.
+- Перед пересборкой артефактов лучше заново запускать `python3 train.py` на актуальном коде.
